@@ -2,7 +2,7 @@
 
 \usepackage[T2A]{fontenc}
 \usepackage[utf8]{inputenc}
-\usepackage[russian]{babel}
+\usepackage[english,russian]{babel}
 \usepackage{amsmath,amssymb}
 \usepackage{array}
 \usepackage{booktabs}
@@ -15,9 +15,9 @@
 \usepackage{placeins}
 \usepackage[hidelinks]{hyperref}
 \hypersetup{
-  pdftitle={Сравнение трёх вариационных методов построения структурированных расчётных сеток},
-  pdfauthor={Д. Э. Халилов},
-  pdfkeywords={генерация структурированных сеток, метод упругих нитей, функционал Винслоу, метрический тензор, качество сетки}
+  pdftitle={Сравнение трёх вариационных методов построения структурированных расчётных сеток в криволинейных четырёхугольниках},
+  pdfauthor={Д. Э. Халилов; М. В. Яшина},
+  pdfkeywords={структурированные расчётные сетки, вариационные методы, функционал Винслоу, масштабированный якобиан, верификация программ}
 }
 
 \geometry{left=21mm,right=21mm,top=19mm,bottom=21mm}
@@ -33,15 +33,26 @@
 \newcommand{\Jsc}{J_{\min}^{\mathrm{sc}}}
 \DeclareMathOperator{\tr}{tr}
 
-\title{\textbf{Сравнение трёх вариационных методов построения\\
-структурированных расчётных сеток\\
-в криволинейных четырёхугольниках:\\
-дискретизация, верификация и вычислительный эксперимент}}
-\author{Д.\,Э.~Халилов}
-\date{}
-
 \begin{document}
-\maketitle
+
+\noindent\textbf{УДК 519.63}
+
+\begin{center}
+\vspace{0.5em}
+{\Large\bfseries
+Сравнение трёх вариационных методов построения\\
+структурированных расчётных сеток\\
+в криволинейных четырёхугольниках\par}
+\vspace{0.9em}
+{\normalsize Дмитрий Эдуардович Халилов,
+Марина Викторовна Яшина\par}
+\vspace{0.45em}
+{\small Федеральное государственное бюджетное образовательное учреждение
+высшего образования\\
+«Московский автомобильно-дорожный государственный технический
+университет (МАДИ)»,\\
+125319, Москва, Ленинградский проспект, д.~64, Россия\par}
+\end{center}
 
 \begin{abstract}
 Рассматриваются три вариационных принципа построения двумерных
@@ -66,16 +77,69 @@
 тогда как регуляризованный метод адаптивного натяжения создаёт сильно
 вытянутые ячейки. Результаты показывают, что проверка невязки должна
 дополняться контролем аналитического градиента, знака якобиана и формы
-ячеек. На общем вычислительном ядре разработана интерактивная программа
-для выбора метода, редактирования границы и анализа сетки.
+ячеек. Критерии допустимости отделены от сравнительных показателей
+качества; универсальный скалярный рейтинг не вводится. На общем
+вычислительном ядре разработана интерактивная программа для выбора
+метода, редактирования границы и анализа сетки.
 \end{abstract}
 
 \begin{small}
 \noindent\textbf{Ключевые слова:}
-генерация структурированных сеток; метод упругих нитей; функционал
-Винслоу; метрический тензор; барьерная регуляризация; ориентированный
-якобиан; качество сетки; верификация программ.
+структурированные расчётные сетки; вариационные методы; функционал
+Винслоу; масштабированный якобиан; верификация программ.
 \end{small}
+
+\begin{otherlanguage}{english}
+\vspace{1em}
+\begin{center}
+{\large\bfseries
+Comparison of Three Variational Methods for Structured Grid Generation
+in Curvilinear Quadrilaterals\par}
+\vspace{0.65em}
+{\normalsize Dmitry E. Khalilov, Marina V. Yashina\par}
+\vspace{0.35em}
+{\small Moscow Automobile and Road Construction State Technical
+University (MADI),\\
+64 Leningradsky Prospekt, Moscow 125319, Russia\par}
+\end{center}
+
+\begin{quote}
+\small
+\noindent\textbf{Abstract.}
+Three variational principles for generating two-dimensional structured
+grids with fixed boundary nodes are considered: an elastic-thread
+method, the Winslow method, and a metric-tensor principle referred to
+as adaptive tension. The objective is to obtain mathematically
+consistent, reproducible implementations and to compare the geometric
+quality of the resulting grids. The elastic-thread method is formulated
+as a weighted discrete harmonic problem with iterative balancing of the
+energies of the two edge families. The Winslow functional is discretized
+using four oriented triangles per quadrilateral cell. The adaptive
+functional is written in terms of the trace and determinant of the
+metric tensor; coordinates are normalized for scale invariance and a
+logarithmic barrier is used to preserve orientation. Analytical
+gradients of both nonlinear functionals are verified by central
+differences. Experiments on \(21\times21\) grids for a square, a disk,
+and a semi-annulus show that all methods reproduce the affine square
+grid. For the disk, Winslow gives the highest orthogonality score,
+whereas regularized adaptive tension gives the lowest area variation.
+For the semi-annulus, stiffness balancing removes 104 inverted cells
+present in the equal-stiffness elastic grid, while adaptive tension at
+\(\mu=0.1\) produces highly elongated cells. Admissibility criteria are
+separated from comparative quality indicators, and no universal scalar
+score is introduced. All three reported solutions for the disk and the
+semi-annulus satisfy the orientation condition. Residual checks are
+supplemented by verification of the analytical gradient, Jacobian sign,
+and cell shape. A desktop application provides method selection,
+interactive boundary editing, quality diagnostics, project storage,
+and data export.
+
+\medskip
+\noindent\textbf{Keywords:}
+structured computational grids; variational methods; Winslow
+functional; scaled Jacobian; software verification.
+\end{quote}
+\end{otherlanguage}
 
 \section{Введение}
 
@@ -99,11 +163,13 @@
 функционалы.
 
 Четырёхтреугольная дискретизация функционала Винслоу и её барьерное
-свойство основаны на методических материалах В.\,Ф.~Тишкина
-\cite{tishkin2024}. Согласно сведениям автора, В.\,Ф.~Тишкину
-принадлежит также идея принципа, условно названного адаптивным
-натяжением; доступная формула этого принципа зафиксирована в
-\cite{khalilov2024}. В статье постановки изложены в единой системе
+свойство опираются на сохранившийся фрагмент методических материалов,
+атрибутированный В.\,Ф.~Тишкину в исходной
+работе~\cite{tishkin2024,khalilov2024}. В той же работе
+В.\,Ф.~Тишкину атрибутирована также идея принципа, условно названного
+адаптивным натяжением. Поскольку отдельная публикация этого принципа не
+обнаружена, в настоящей статье атрибуция сохранена с явным указанием её
+источника. В статье постановки изложены в единой системе
 обозначений, дополнены условиями геометрической допустимости и связаны
 с конкретными вычислительными алгоритмами.
 
@@ -602,13 +668,60 @@ D & сравнение &
 требует отсутствия инвертированных ячеек, а не только малой линейной
 невязки.
 
-\section{Критерии качества}
+\section{Критерии допустимости и показатели качества}
 
-Для сопоставимости с исходным экспериментом \cite{khalilov2024} прежде
-всего вычисляются два ранее использованных показателя. Несмотря на
-исходное словесное описание как
-``среднеквадратического отклонения'', формула коэффициента
-ортогональности была
+При оценке результата необходимо различать три логически разные группы
+условий. Критерий сходимости характеризует завершение численного
+алгоритма; критерии допустимости отвечают на вопрос, задаёт ли результат
+невырожденную сетку с сохранённой ориентацией; показатели качества
+сравнивают геометрию уже допустимых сеток. Малой невязки недостаточно для
+подтверждения допустимости, а один показатель формы не задаёт
+универсального порядка предпочтения методов.
+
+\subsection{Сходимость и геометрическая допустимость}
+
+Для линейного метода сходимость подтверждается малой нормой невязки
+дискретных уравнений, для нелинейных методов --- выполнением допуска по
+\(\ell_\infty\)-норме градиента. В обоих случаях дополнительно требуется
+геометрическая допустимость.
+
+Пусть \(K_{ij}\) --- четырёхугольная ячейка, \(q\) --- один из четырёх
+её углов, а \(\vect e_{\xi,ij}^{(q)}\) и
+\(\vect e_{\eta,ij}^{(q)}\) --- два инцидентных углу ребра, направленных
+согласованно с положительной ориентацией ячейки. Угловой ориентированный
+якобиан и его масштабированный вариант определяются формулами
+\begin{equation}
+J_{ij}^{(q)}
+=\det\!\left(\vect e_{\xi,ij}^{(q)},\vect e_{\eta,ij}^{(q)}\right),
+\qquad
+J_{ij}^{\mathrm{sc},(q)}
+=\frac{J_{ij}^{(q)}}
+{\lVert\vect e_{\xi,ij}^{(q)}\rVert
+ \lVert\vect e_{\eta,ij}^{(q)}\rVert}.
+\label{eq:scaled-jacobian}
+\end{equation}
+Масштабированный якобиан является безразмерной алгебраической метрикой
+формы, принимает значения от \(-1\) до \(1\), а знак сохраняет
+информацию об ориентации~\cite{knupp2001}. В расчётах используются
+\begin{equation}
+\Jsc=\min_{i,j,q}J_{ij}^{\mathrm{sc},(q)},\qquad
+N_{\mathrm{inv}}=
+\sum_{i,j}\mathbf 1\!\left\{\min_q J_{ij}^{(q)}\le0\right\}.
+\label{eq:admissibility-metrics}
+\end{equation}
+Сетка признаётся геометрически допустимой тогда и только тогда, когда
+\(\Jsc>0\). При конечных ненулевых рёбрах это условие эквивалентно
+\(N_{\mathrm{inv}}=0\). Первый показатель одновременно задаёт запас по
+форме худшего угла, тогда как второй является наглядным диагностическим
+счётчиком и независимой программной проверкой. Неположительное значение
+любого углового якобиана служит жёстким основанием для отбраковки и не
+может быть компенсировано другими показателями.
+
+\subsection{Сравнительные показатели качества}
+
+Для сопоставимости с исходным экспериментом~\cite{khalilov2024}
+сохраняются два использованных в нём показателя. Формула коэффициента
+ортогональности имеет вид
 \begin{equation}
 Q_{\mathrm{orth}}=
 \frac{1}{(N_\xi-2)(N_\eta-2)}
@@ -618,10 +731,12 @@ Q_{\mathrm{orth}}=
 \end{equation}
 Здесь \(\theta_{ij}\) --- угол между рёбрами из внутреннего узла в
 направлениях \(+\xi\) и \(+\eta\). Следовательно,
-\(Q_{\mathrm{orth}}=1\) соответствует прямому углу и является лучшим
-значением.
+\(Q_{\mathrm{orth}}\in[0,1]\), причём единица соответствует прямому
+углу и является идеальным значением. Показатель использует одну пару
+исходящих координатных рёбер в каждом внутреннем узле; он не является
+оценкой ошибки решения дифференциального уравнения.
 
-Неоднозначная исходная запись критерия длин реализована в форме
+Неоднозначная исходная запись показателя длин реализована в форме
 \begin{equation}
 \sigma_{\mathrm{len}}=
 \frac{1}{(N_\xi-1)(N_\eta-1)}
@@ -635,20 +750,13 @@ Q_{\mathrm{orth}}=
 Этот показатель характеризует локальное рассогласование масштабов двух
 координатных направлений, но не равномерность каждого семейства рёбер.
 Даже для равномерной прямоугольной декартовой сетки он равен
-\(|h_\xi-h_\eta|\). Величина размерна: она пригодна для сравнения
-методов в одной области, но меняется при масштабировании.
-
-Поэтому дополнительно используются:
-\(\Jsc\) --- минимум масштабированного ориентированного якобиана
-(отношения ориентированного якобиана к произведению длин соответствующих
-рёбер) по четырём углам каждой ячейки;
-\(N_{\mathrm{inv}}\) --- число ячеек хотя бы с одним неположительным
-угловым якобианом; \(CV_A\) --- коэффициент вариации модулей площадей;
-\(AR_{95}\) --- 95-й процентиль отношения сингулярных чисел локального
-отображения. Для допустимой сетки нужны \(\Jsc>0\) и
-\(N_{\mathrm{inv}}=0\). Для \(Q_{\mathrm{orth}}\) и \(\Jsc\) больше
-лучше; для \(\sigma_{\mathrm{len}}\), \(N_{\mathrm{inv}}\), \(CV_A\) и
-\(AR_{95}\) меньше лучше.
+\(|L_\xi h_\xi-L_\eta h_\eta|\), где \(L_\xi\) и \(L_\eta\) ---
+физические длины сторон в двух координатных направлениях. Величина
+размерна: она пригодна для сравнения методов в одной области, но
+меняется при масштабировании. Обозначение
+\(\sigma_{\mathrm{len}}\) сохранено для преемственности и не означает
+стандартное отклонение; диапазон показателя равен \([0,\infty)\), а
+идеальное значение --- нуль.
 
 Для полноты определения метрик площадь ячейки вычисляется по диагонали:
 \[
@@ -662,6 +770,11 @@ A_{ij}=\frac12\left|
 CV_A=\frac{\sqrt{M^{-1}\sum_{i,j}(A_{ij}-\overline A)^2}}
 {\overline A}.
 \]
+Здесь \(CV_A\in[0,\infty)\), нуль соответствует равным площадям.
+Модули площадей используются лишь после проверки
+\eqref{eq:admissibility-metrics}, поскольку сами по себе они маскируют
+смену ориентации.
+
 В центре ячейки используются усреднённые противоположные производные
 \[
 \overline{\vect p}_{ij}=
@@ -677,6 +790,73 @@ CV_A=\frac{\sqrt{M^{-1}\sum_{i,j}(A_{ij}-\overline A)^2}}
 \((\overline{\vect p}_{ij},\overline{\vect q}_{ij})\).
 \(AR_{95}\) является его эмпирическим 95-м процентилем с линейной
 интерполяцией между соседними порядковыми статистиками.
+Следовательно, \(AR_{95}\in[1,\infty)\), идеальное значение равно
+единице. Процентиль устойчив к единичным выбросам, но не ограничивает
+наихудшую ячейку.
+
+Принятые правила интерпретации сведены в табл.~\ref{tab:metric-rules}.
+\begin{table}[H]
+\centering
+\caption{Критерии допустимости и сравнительные показатели}
+\label{tab:metric-rules}
+\scriptsize
+\renewcommand{\arraystretch}{1.14}
+\begin{tabular}{
+  >{\raggedright\arraybackslash}p{18mm}
+  >{\raggedright\arraybackslash}p{22mm}
+  >{\centering\arraybackslash}p{20mm}
+  >{\centering\arraybackslash}p{20mm}
+  >{\raggedright\arraybackslash}p{62mm}}
+\toprule
+Величина & Тип & Диапазон & Предпочтение & Назначение и ограничение \\
+\midrule
+\(\Jsc\) &
+допустимость &
+\([-1,1]\) &
+\(>0\); больше лучше &
+Минимальная угловая форма и ориентация; определяется худшим углом. \\
+\(N_{\mathrm{inv}}\) &
+диагностика &
+\(\{0,1,\ldots\}\) &
+\(=0\) &
+Число ячеек с неположительным угловым якобианом. \\
+\(Q_{\mathrm{orth}}\) &
+качество &
+\([0,1]\) &
+больше лучше &
+Ортогональность внутренних координатных направлений; единица идеальна. \\
+\(\sigma_{\mathrm{len}}\) &
+качество &
+\([0,\infty)\), длина &
+меньше лучше &
+Рассогласование двух направлений; зависит от масштаба области. \\
+\(CV_A\) &
+качество &
+\([0,\infty)\) &
+меньше лучше &
+Относительный разброс площадей; не выявляет инверсию без отдельной
+проверки знака. \\
+\(AR_{95}\) &
+качество &
+\([1,\infty)\) &
+меньше лучше &
+Типичная верхняя граница вытянутости; 5\% ячеек могут быть хуже. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Итоговое сравнение проводится в три этапа. Сначала подтверждается
+сходимость численного алгоритма; несошедшаяся сетка может
+рассматриваться только как диагностический промежуточный результат.
+Затем отбрасываются геометрически недопустимые сетки с \(\Jsc\le0\)
+(эквивалентно \(N_{\mathrm{inv}}>0\)). Наконец, сошедшиеся допустимые
+варианты сопоставляются по вектору
+\((\Jsc,Q_{\mathrm{orth}},\sigma_{\mathrm{len}},CV_A,AR_{95})\) с учётом
+целевой численной задачи. Произвольная взвешенная сумма показателей не
+вводится. Универсальные пороги ``хорошего качества'' также не задаются:
+они зависят от дискретизации и решаемого уравнения; в настоящем
+геометрическом эксперименте фиксируются только математические условия
+допустимости, диапазоны и идеальные направления изменения метрик.
 
 \section{Вычислительный эксперимент}
 
@@ -1018,6 +1198,39 @@ DPI Windows. Два встроенных режима проверки созд�
 Приложение даёт воспроизводимый интерактивный доступ к трём решателям
 и метрикам качества.
 
+\section*{Сведения об авторах}
+
+\noindent\textbf{Дмитрий Эдуардович Халилов}\par
+\noindent Разработчик программной реализации; Московский
+автомобильно-дорожный государственный технический университет (МАДИ),
+Москва, Россия.
+
+\smallskip
+\noindent\textbf{Марина Викторовна Яшина}\par
+\noindent Доктор технических наук, кандидат физико-математических наук,
+доцент, заведующий кафедрой высшей математики; Московский
+автомобильно-дорожный государственный технический университет (МАДИ),
+Москва, Россия;
+ORCID: \href{https://orcid.org/0000-0001-8810-918X}
+{0000-0001-8810-918X}.
+
+\begin{otherlanguage}{english}
+\section*{Information about the authors}
+
+\noindent\textbf{Dmitry E. Khalilov}\par
+\noindent Software developer; Moscow Automobile and Road Construction
+State Technical University (MADI), Moscow, Russia.
+
+\smallskip
+\noindent\textbf{Marina V. Yashina}\par
+\noindent Doctor of Technical Sciences, Candidate of Sciences (Physics
+and Mathematics), Associate Professor, Head of the Department of
+Higher Mathematics; Moscow Automobile and Road Construction State
+Technical University (MADI), Moscow, Russia;
+ORCID: \href{https://orcid.org/0000-0001-8810-918X}
+{0000-0001-8810-918X}.
+\end{otherlanguage}
+
 \begingroup
 \footnotesize
 \raggedright
@@ -1040,12 +1253,12 @@ Winslow A.\,M.
 Numerical solution of the quasilinear Poisson equation in a nonuniform
 triangle mesh.
 \textit{Journal of Computational Physics}. 1966. Vol.~1, no.~2.
-P.~149--172.
+P.~149--172. doi: 10.1016/0021-9991(66)90001-5.
 
 \bibitem{tikhonov1999}
 Тихонов А.\,Н., Самарский А.\,А.
 \textit{Уравнения математической физики}.
-М., 1999.
+6-е изд., испр. и доп. М.: Изд-во Моск. ун-та, 1999. 798~с.
 
 \bibitem{ivanenko1988}
 Иваненко С.\,А., Чарахчьян А.\,А.
@@ -1061,7 +1274,8 @@ Amsterdam: North-Holland, 1985.
 \bibitem{coons1967}
 Coons S.\,A.
 \textit{Surfaces for Computer-Aided Design of Space Forms}.
-Technical Report MAC-TR-41. 1967.
+Cambridge, MA: Massachusetts Institute of Technology, Project MAC,
+1967. Technical Report MAC-TR-41.
 
 \bibitem{liu1989}
 Liu D.\,C., Nocedal J.
@@ -1076,11 +1290,18 @@ derivatives.
 \textit{Pacific Journal of Mathematics}. 1966. Vol.~16, no.~1.
 P.~1--3. doi: 10.2140/pjm.1966.16.1.
 
+\bibitem{knupp2001}
+Knupp P.\,M.
+Algebraic mesh quality metrics.
+\textit{SIAM Journal on Scientific Computing}. 2001. Vol.~23, no.~1.
+P.~193--218. doi: 10.1137/S1064827500371499.
+
 \bibitem{tishkin2024}
-Тишкин В.\,Ф.
 \textit{Описание программы построения расчётной сетки}.
-Неопубликованная рукопись, полученная автором в порядке личного
-сообщения. Б.\,м., б.\,г.
+Фрагмент неопубликованных методических материалов, атрибутированный
+В.\,Ф.~Тишкину в исходной работе Д.\,Э.~Халилова. Б.\,м., б.\,г.
+Сохранившийся электронный фрагмент включён в дополнительные материалы:
+\texttt{original-theory/tishkin\_grid.tex}.
 
 \bibitem{khalilov2024}
 Халилов Д.\,Э.
