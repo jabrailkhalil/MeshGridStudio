@@ -1114,7 +1114,7 @@ class MeshDesignerApp:
             ("Мин. знаковый якобиан", _format_number(float(metrics["min_scaled_jacobian"]))),
             ("Инвертированные ячейки", str(int(metrics["inverted_cells"]))),
             ("CV площадей", _format_number(float(metrics["area_cv"]))),
-            ("AR₉₅", _format_number(float(metrics["aspect_p95"]))),
+            ("AR₉₅ (κ₂)", _format_number(float(metrics["aspect_p95"]))),
         )
         for metric, value in values:
             self.metrics_tree.insert("", "end", values=(metric, value))

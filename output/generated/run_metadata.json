@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-24T09:17:52+0300",
+  "generated_at": "2026-07-25T19:32:41+0300",
   "python": "3.13.0",
   "platform": "Windows-11-10.0.26100-SP0",
   "numpy": "2.4.2",
@@ -14,7 +14,7 @@
       "converged": true,
       "iterations": 1,
       "residual": 1.3653937842860002e-15,
-      "runtime_s": 0.013604400000076566,
+      "runtime_s": 0.015626600001269253,
       "message": "Sparse direct solve with balanced directional energies",
       "parameters": {
         "weight_xi": 1.0,
@@ -35,7 +35,7 @@
       "converged": true,
       "iterations": 0,
       "residual": 1.5543122344752182e-15,
-      "runtime_s": 0.016700199999831966,
+      "runtime_s": 0.01871670000036829,
       "message": "Infinity norm of the gradient reached the tolerance",
       "parameters": {
         "gradient_tolerance": 2e-06,
@@ -56,7 +56,7 @@
       "converged": true,
       "iterations": 0,
       "residual": 5.809155240177333e-15,
-      "runtime_s": 0.017178700000840763,
+      "runtime_s": 0.020639399999708985,
       "message": "Infinity norm of the gradient reached the tolerance",
       "parameters": {
         "target_jacobian": 4.0,
@@ -80,7 +80,7 @@
       "converged": true,
       "iterations": 1,
       "residual": 1.2523886564118045e-15,
-      "runtime_s": 0.016916300000048068,
+      "runtime_s": 0.012879000001703389,
       "message": "Sparse direct solve with balanced directional energies",
       "parameters": {
         "weight_xi": 1.0,
@@ -101,7 +101,7 @@
       "converged": true,
       "iterations": 83,
       "residual": 1.3778737283620964e-06,
-      "runtime_s": 0.06997809999938909,
+      "runtime_s": 0.06381380000129866,
       "message": "Infinity norm of the gradient reached the tolerance",
       "parameters": {
         "gradient_tolerance": 2e-06,
@@ -205,7 +205,7 @@
       "converged": true,
       "iterations": 86,
       "residual": 1.9686166104738414e-05,
-      "runtime_s": 0.08523449999938748,
+      "runtime_s": 0.08618299999943702,
       "message": "Infinity norm of the gradient reached the tolerance",
       "parameters": {
         "target_jacobian": 3.1415923455701185,
@@ -315,7 +315,7 @@
       "converged": true,
       "iterations": 44,
       "residual": 9.891757380036218e-16,
-      "runtime_s": 0.5534311000001253,
+      "runtime_s": 0.6048731000009866,
       "message": "Sparse direct solve with balanced directional energies",
       "parameters": {
         "weight_xi": 0.06173208546073416,
@@ -379,7 +379,7 @@
       "converged": true,
       "iterations": 255,
       "residual": 1.7486769328900513e-06,
-      "runtime_s": 0.1622869000002538,
+      "runtime_s": 0.1825408000004245,
       "message": "Infinity norm of the gradient reached the tolerance",
       "parameters": {
         "gradient_tolerance": 2e-06,
@@ -655,7 +655,7 @@
       "converged": true,
       "iterations": 2940,
       "residual": 1.988161169734126e-05,
-      "runtime_s": 1.7649552000002586,
+      "runtime_s": 2.0939618999982486,
       "message": "Infinity norm of the gradient reached the tolerance",
       "parameters": {
         "target_jacobian": 1.2527095793275906,

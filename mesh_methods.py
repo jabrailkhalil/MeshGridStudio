@@ -1084,6 +1084,23 @@ def _format_float(value: float) -> str:
     return f"{value:.4f}"
 
 
+def _format_runtime_ms(value: float) -> str:
+    """Report timings no more precisely than the experiment supports."""
+
+    return f"{value:.1f}" if abs(value) < 1_000.0 else f"{value:.0f}"
+
+
+def _latex_method_name(value: object) -> str:
+    """Render the adaptive parameter with a mathematical Greek mu."""
+
+    label = str(value)
+    marker = "(mu="
+    if marker in label and label.endswith(")"):
+        prefix, parameter = label.rsplit(marker, maxsplit=1)
+        return f"{prefix}($\\mu={parameter[:-1]}$)"
+    return label
+
+
 def write_latex_table(rows: list[dict[str, object]], path: Path) -> None:
     lines = [
         r"\begin{tabular}{llrrrrrrr}",
@@ -1097,14 +1114,14 @@ def write_latex_table(rows: list[dict[str, object]], path: Path) -> None:
         lines.append(
             "{} & {} & {} & {} & {} & {} & {} & {} & {} \\\\".format(
                 row["domain"],
-                row["method"],
+                _latex_method_name(row["method"]),
                 _format_float(float(row["orthogonality_score"])),
                 _format_float(float(row["directional_length_difference"])),
                 _format_float(float(row["min_scaled_jacobian"])),
                 int(row["inverted_cells"]),
                 _format_float(float(row["area_cv"])),
                 _format_float(float(row["aspect_p95"])),
-                _format_float(float(row["runtime_ms"])),
+                _format_runtime_ms(float(row["runtime_ms"])),
             )
         )
     lines.extend((r"\bottomrule", r"\end{tabular}"))
