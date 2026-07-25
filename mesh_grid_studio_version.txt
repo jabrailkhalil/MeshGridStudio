@@ -14,7 +14,7 @@ VSVersionInfo(
       StringTable(
         '041904B0',
         [
-          StringStruct('CompanyName', 'Д. Э. Халилов'),
+          StringStruct('CompanyName', 'Джабраиль Эльнурович Халилов'),
           StringStruct('FileDescription', 'Интерактивный редактор расчётных сеток'),
           StringStruct('FileVersion', '1.0.1'),
           StringStruct('InternalName', 'MeshGridStudio'),
