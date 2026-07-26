@@ -46,15 +46,10 @@
 \vspace{0.9em}
 {\normalsize Джабраиль Эльнурович Халилов,
 Марина Викторовна Яшина\par}
-\vspace{0.45em}
-{\small Федеральное государственное бюджетное образовательное учреждение
-высшего образования\\
-«Московский автомобильно-дорожный государственный технический
-университет (МАДИ)»,\\
-125319, Москва, Ленинградский проспект, д.~64, Россия\par}
 \end{center}
 
 \begin{abstract}
+\small
 Рассматриваются три вариационных принципа построения двумерных
 структурированных сеток с фиксированными граничными узлами:
 метод упругих нитей, метод Винслоу и принцип на основе метрического
@@ -75,12 +70,11 @@
 натяжение --- наименьший разброс площадей. В полукольце балансировка
 жёсткостей устраняет 104 инвертированные ячейки равножёсткого варианта,
 тогда как регуляризованный метод адаптивного натяжения создаёт сильно
-вытянутые ячейки. Результаты показывают, что проверка невязки должна
-дополняться контролем аналитического градиента, знака якобиана и формы
-ячеек. Критерии допустимости отделены от сравнительных показателей
-качества; универсальный скалярный рейтинг не вводится. На общем
-вычислительном ядре разработана интерактивная программа для выбора
-метода, редактирования границы и анализа сетки.
+вытянутые ячейки. Допустимость контролируется по невязке или
+аналитическому градиенту, знаку якобиана и форме ячеек; универсальный
+скалярный рейтинг не вводится. На общем вычислительном ядре разработана
+интерактивная программа для выбора метода, редактирования границы и
+анализа сетки.
 \end{abstract}
 
 \begin{small}
@@ -90,7 +84,6 @@
 \end{small}
 
 \begin{otherlanguage}{english}
-\newpage
 \vspace{1em}
 \begin{center}
 {\large\bfseries
@@ -98,10 +91,6 @@ Comparison of Three Variational Methods for Structured Grid Generation
 in Curvilinear Quadrilaterals\par}
 \vspace{0.65em}
 {\normalsize Dzhabrail E. Khalilov, Marina V. Yashina\par}
-\vspace{0.35em}
-{\small Moscow Automobile and Road Construction State Technical
-University (MADI),\\
-64 Leningradsky Prospekt, Moscow 125319, Russia\par}
 \end{center}
 
 \begin{quote}
@@ -127,13 +116,10 @@ whereas regularized adaptive tension gives the lowest area variation.
 For the semi-annulus, stiffness balancing removes 104 inverted cells
 present in the equal-stiffness elastic grid, while adaptive tension at
 \(\mu=0.1\) produces highly elongated cells. Admissibility criteria are
-separated from comparative quality indicators, and no universal scalar
-score is introduced. All three reported solutions for the disk and the
-semi-annulus satisfy the orientation condition. Residual checks are
-supplemented by verification of the analytical gradient, Jacobian sign,
-and cell shape. A desktop application provides method selection,
-interactive boundary editing, quality diagnostics, project storage,
-and data export.
+checked by residual or analytical-gradient norms, Jacobian sign, and
+cell-shape diagnostics, without a universal scalar rating. A desktop
+application provides method selection, interactive boundary editing,
+quality diagnostics, project storage, and data export.
 
 \medskip
 \noindent\textbf{Keywords:}
@@ -723,7 +709,10 @@ D & сравнение &
 геометрической допустимости. Использованы
 \(\varepsilon_J=10^{-14}\), не более 5000
 итераций и допуски \(2\cdot10^{-6}\) для Винслоу,
-\(2\cdot10^{-5}\) для адаптивного натяжения. Для угловых векторных
+\(2\cdot10^{-5}\) для адаптивного натяжения. Норма вычисляется по
+градиенту относительно нормированных узловых координат
+\(\widehat{\vect r}=\vect r/\sqrt{J_*}\), поэтому допуски не меняются
+при равномерном масштабировании области. Для угловых векторных
 произведений порог равен
 \(\varepsilon_JJ_*h_\xi h_\eta\); он масштабируется вместе с областью и
 имеет согласованные единицы. Это исключает ложную остановку по малому
@@ -1014,7 +1003,8 @@ A_{ij}=(\overline{\vect p}_{ij},\overline{\vect q}_{ij}).
 параметрического четырёхугольника на гладкой окружности. Перемещение
 внутренних узлов может уменьшить этот глобальный минимум, но не
 позволяет превысить заданную границей верхнюю оценку
-\(\Jsc\le\sin(\pi/[2(N_\xi-1)])\). В отмеченных гладких ``углах'' диска
+\(\Jsc\le\sin(\pi/[2(N_\xi-1)])\) для использованного случая
+\(N_\xi=N_\eta\). В отмеченных гладких ``углах'' диска
 касательные соседних дуг совпадают, поэтому при сгущении границы эта
 оценка стремится к нулю. Строгое условие
 \eqref{eq:positive-j} здесь относится к внутренности; граничное
@@ -1286,39 +1276,6 @@ DPI Windows. Два встроенных режима проверки созд�
 Приложение даёт воспроизводимый интерактивный доступ к трём решателям
 и метрикам качества.
 
-\section*{Сведения об авторах}
-
-\noindent\textbf{Джабраиль Эльнурович Халилов}\par
-\noindent Разработчик программной реализации; Московский
-автомобильно-дорожный государственный технический университет (МАДИ),
-Москва, Россия.
-
-\smallskip
-\noindent\textbf{Марина Викторовна Яшина}\par
-\noindent Доктор технических наук, кандидат физико-математических наук,
-доцент, заведующий кафедрой высшей математики; Московский
-автомобильно-дорожный государственный технический университет (МАДИ),
-Москва, Россия;
-ORCID: \href{https://orcid.org/0000-0001-8810-918X}
-{0000-0001-8810-918X}.
-
-\begin{otherlanguage}{english}
-\section*{Information about the authors}
-
-\noindent\textbf{Dzhabrail E. Khalilov}\par
-\noindent Software developer; Moscow Automobile and Road Construction
-State Technical University (MADI), Moscow, Russia.
-
-\smallskip
-\noindent\textbf{Marina V. Yashina}\par
-\noindent Doctor of Technical Sciences, Candidate of Sciences (Physics
-and Mathematics), Associate Professor, Head of the Department of
-Higher Mathematics; Moscow Automobile and Road Construction State
-Technical University (MADI), Moscow, Russia;
-ORCID: \href{https://orcid.org/0000-0001-8810-918X}
-{0000-0001-8810-918X}.
-\end{otherlanguage}
-
 \begingroup
 \footnotesize
 \raggedright
@@ -1335,14 +1292,17 @@ ORCID: \href{https://orcid.org/0000-0001-8810-918X}
 Годунов С.\,К., Прокопов Г.\,П.
 О расчётах конформных отображений и построений разностных сеток.
 \textit{ЖВМ и МФ}. 1967. Т.~7, №~5. С.~1031--1059.
-doi: 10.1016/0041-5553(67)90096-1.
+\href{https://doi.org/10.1016/0041-5553(67)90096-1}
+{doi: 10.1016/0041-5553(67)90096-1}.
 
 \bibitem{winslow1966}
 Winslow A.\,M.
 Numerical solution of the quasilinear Poisson equation in a nonuniform
 triangle mesh.
 \textit{Journal of Computational Physics}. 1966. Vol.~1, no.~2.
-P.~149--172. doi: 10.1016/0021-9991(66)90001-5.
+P.~149--172.
+\href{https://doi.org/10.1016/0021-9991(66)90001-5}
+{doi: 10.1016/0021-9991(66)90001-5}.
 
 \bibitem{tikhonov1999}
 Тихонов А.\,Н., Самарский А.\,А.
@@ -1370,20 +1330,25 @@ Cambridge, MA: Massachusetts Institute of Technology, Project MAC,
 Liu D.\,C., Nocedal J.
 On the limited memory BFGS method for large scale optimization.
 \textit{Mathematical Programming}. 1989. Vol.~45. P.~503--528.
-doi: 10.1007/BF01589116.
+\href{https://doi.org/10.1007/BF01589116}
+{doi: 10.1007/BF01589116}.
 
 \bibitem{armijo1966}
 Armijo L.
 Minimization of functions having Lipschitz continuous first partial
 derivatives.
 \textit{Pacific Journal of Mathematics}. 1966. Vol.~16, no.~1.
-P.~1--3. doi: 10.2140/pjm.1966.16.1.
+P.~1--3.
+\href{https://doi.org/10.2140/pjm.1966.16.1}
+{doi: 10.2140/pjm.1966.16.1}.
 
 \bibitem{knupp2001}
 Knupp P.\,M.
 Algebraic mesh quality metrics.
 \textit{SIAM Journal on Scientific Computing}. 2001. Vol.~23, no.~1.
-P.~193--218. doi: 10.1137/S1064827500371499.
+P.~193--218.
+\href{https://doi.org/10.1137/S1064827500371499}
+{doi: 10.1137/S1064827500371499}.
 
 \bibitem{tishkin2024}
 \textit{Описание программы построения расчётной сетки}.
@@ -1401,5 +1366,31 @@ P.~193--218. doi: 10.1137/S1064827500371499.
 
 \end{thebibliography}
 \endgroup
+
+\section*{Сведения об авторах}
+
+\noindent\textbf{Джабраиль Эльнурович Халилов}\par
+\noindent Разработчик программного обеспечения.
+
+\smallskip
+\noindent\textbf{Марина Викторовна Яшина}\par
+\noindent Доктор технических наук, кандидат физико-математических наук,
+доцент;
+ORCID: \href{https://orcid.org/0000-0001-8810-918X}
+{0000-0001-8810-918X}.
+
+\begin{otherlanguage}{english}
+\section*{Information about the authors}
+
+\noindent\textbf{Dzhabrail E. Khalilov}\par
+\noindent Software developer.
+
+\smallskip
+\noindent\textbf{Marina V. Yashina}\par
+\noindent Doctor of Technical Sciences, Candidate of Physical and
+Mathematical Sciences, Associate Professor;
+ORCID: \href{https://orcid.org/0000-0001-8810-918X}
+{0000-0001-8810-918X}.
+\end{otherlanguage}
 
 \end{document}
