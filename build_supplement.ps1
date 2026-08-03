@@ -53,7 +53,8 @@ $rootFiles = @(
     "SUPPLEMENTARY.md",
     "test_mesh_gui.py",
     "test_mesh_methods.py",
-    "tishkin_grid.tex"
+    "tishkin_grid.tex",
+    "verify_generated.py"
 )
 foreach ($relativePath in $rootFiles) {
     Copy-RequiredFile `
@@ -89,11 +90,6 @@ foreach ($fileName in $generatedFiles) {
 Copy-RequiredFile `
     -Source (Join-Path $outputRoot "pdf\article.pdf") `
     -Destination (Join-Path $stagingDirectory "output\pdf\article.pdf")
-Copy-RequiredFile `
-    -Source (Join-Path $outputRoot "app\ui-preview-fast-exe.png") `
-    -Destination (
-        Join-Path $stagingDirectory "output\app\ui-preview-fast-exe.png"
-    )
 Copy-RequiredFile `
     -Source (Join-Path $projectRoot "docs\ui-preview.png") `
     -Destination (Join-Path $stagingDirectory "docs\ui-preview.png")

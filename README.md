@@ -27,9 +27,9 @@
 |---|---|---|
 | Квадрат | Контрольный аффинный случай: методы эквивалентны | `Q_orth = 1`, `Jsc = 1`, `AR95 = 1` |
 | Круг | Винслоу лучше при приоритете ортогональности | `Q_orth = 0.9368`, на 2.01% выше метода упругих нитей |
-| Круг | Адаптивный метод лучше по равномерности площадей и спектральному показателю формы | `CV_A = 0.0650`, `AR95 = 2.0006`; `CV_A` на 49.69% ниже Винслоу |
+| Круг | Адаптивный метод лучше по равномерности площадей и спектральному показателю формы | `CV_A = 0.0650`, `AR95 = 2.0007`; `CV_A` на 49.68% ниже Винслоу |
 | Полукольцо | Сбалансированные упругие нити практически совпадают с Винслоу и немного лучше по `Jsc`, `CV_A` и `AR95` | `Jsc = 0.9569`; балансировка устраняет 104 инвертированные ячейки равножёсткого варианта |
-| Полукольцо | Адаптивный вариант при `mu = 0.1` неприемлем по форме ячеек | `Jsc` в 33.00 раза ниже, `AR95` в 14.18 раза выше упругих нитей |
+| Полукольцо | Регуляризованный адаптивный вариант при `mu = 0.1` неприемлем по форме ячеек | `Jsc` в 33.01 раза ниже, `AR95` в 14.18 раза выше упругих нитей |
 
 ![Наложение сеток трёх методов](output/generated/mesh_overlays.png)
 
@@ -180,8 +180,9 @@ python mesh_gui.py
 
 ```powershell
 python -m unittest -v test_mesh_methods.py test_mesh_gui.py
-python mesh_methods.py --output-dir output/generated
-python mesh_methods.py --adaptive-mu0-control --output-dir output/generated
+python mesh_methods.py --output-dir output/reproduced
+python mesh_methods.py --adaptive-mu0-control --output-dir output/reproduced
+python verify_generated.py output/generated output/reproduced
 pdflatex -interaction=nonstopmode -halt-on-error -output-directory=output/pdf article.tex
 pdflatex -interaction=nonstopmode -halt-on-error -output-directory=output/pdf article.tex
 ```
@@ -225,7 +226,8 @@ mesh_gui.py             интерфейс Tk и интерактивный ре
 mesh_gui_model.py       модель проекта и редактирования границы
 build_supplement.ps1    воспроизводимая упаковка материалов статьи
 package_supplement.py   кроссплатформенная запись ZIP с путями через `/`
-test_mesh_methods.py    19 тестов численных методов
+verify_generated.py     проверка повторно вычисленных научных показателей
+test_mesh_methods.py    21 тест численных методов
 test_mesh_gui.py        11 тестов интерфейсной модели и диспетчеризации
 article.tex             научная статья
 tishkin_grid.tex        материалы В. Ф. Тишкина

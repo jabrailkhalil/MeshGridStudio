@@ -120,6 +120,44 @@ class BoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "corner gap"):
             meshes.validate_boundary(gapped)
 
+    def test_area_validation_and_solvers_are_translation_invariant(self) -> None:
+        base = meshes.circle_boundary()
+        area_shift = np.array((1.0e8, -1.0e8))
+        solver_shift = np.array((1.0e5, -1.0e5))
+
+        def translate(boundary, shift):
+            def translated(curve):
+                return lambda parameter: curve(parameter) + shift
+
+            return meshes.Boundary(
+                "Сдвинутый круг",
+                *(translated(curve) for curve in boundary.curves),
+            )
+
+        far_shifted = translate(base, area_shift)
+        solver_shifted = translate(base, solver_shift)
+        meshes.validate_boundary(far_shifted)
+        self.assertAlmostEqual(
+            meshes.boundary_area(far_shifted), meshes.boundary_area(base), places=7
+        )
+        for generator in (
+            meshes.generate_harmonic,
+            meshes.generate_winslow,
+            meshes.generate_adaptive_tension,
+        ):
+            with self.subTest(generator=generator.__name__):
+                reference = generator(base, 9, 7)
+                translated_result = generator(solver_shifted, 9, 7)
+                self.assertTrue(translated_result.converged, translated_result.message)
+                self.assertLess(
+                    np.max(
+                        np.abs(
+                            (translated_result.grid - solver_shift) - reference.grid
+                        )
+                    ),
+                    5e-7,
+                )
+
 
 class AlgorithmTests(unittest.TestCase):
     def test_affine_square_is_fixed_point_for_all_methods(self) -> None:
@@ -348,6 +386,32 @@ class MetricTests(unittest.TestCase):
             expected_length_difference,
             places=12,
         )
+
+    def test_dimensionless_metrics_are_invariant_at_tiny_scale(self) -> None:
+        dimensionless_keys = (
+            "orthogonality_score",
+            "center_rms_cosine",
+            "min_scaled_jacobian",
+            "area_cv",
+            "edge_cv",
+            "aspect_p95",
+        )
+        for generator in (
+            meshes.generate_harmonic,
+            meshes.generate_winslow,
+            meshes.generate_adaptive_tension,
+        ):
+            with self.subTest(generator=generator.__name__):
+                reference = meshes.grid_metrics(
+                    generator(meshes.circle_boundary(), 5, 5)
+                )
+                tiny = meshes.grid_metrics(
+                    generator(meshes.circle_boundary(1.0e-16), 5, 5)
+                )
+                for key in dimensionless_keys:
+                    self.assertAlmostEqual(
+                        float(tiny[key]), float(reference[key]), places=8
+                    )
 
 
 if __name__ == "__main__":

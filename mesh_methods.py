@@ -240,8 +240,14 @@ def first_nonadjacent_segment_intersection(
 
 def boundary_area(boundary: Boundary, samples_per_side: int = 2049) -> float:
     polygon = _sample_boundary_polygon(boundary, samples_per_side)
-    x = polygon[:, 0]
-    y = polygon[:, 1]
+    # The shoelace formula is translation invariant analytically, but its
+    # uncentred products can catastrophically cancel when a small domain is
+    # described far from the coordinate origin.  Translate to a sampled
+    # boundary point before forming the products so that validation and all
+    # area-scaled solvers retain that invariance in floating-point arithmetic.
+    centered = polygon - polygon[0]
+    x = centered[:, 0]
+    y = centered[:, 1]
     return float(0.5 * np.sum(x * np.roll(y, -1) - y * np.roll(x, -1)))
 
 
@@ -372,6 +378,8 @@ def generate_harmonic(
     ni = n_xi - 2
     nj = n_eta - 2
     boundary_grid = sample_boundary(boundary, n_xi, n_eta)
+    coordinate_origin = boundary_grid[0, 0].copy()
+    centered_boundary_grid = boundary_grid - coordinate_origin
     area = boundary_area(boundary)
     if not np.isfinite(area) or area <= 0.0:
         raise ValueError("Boundary area must be positive and finite")
@@ -394,13 +402,13 @@ def generate_harmonic(
     matrix_eta = kron(identity_xi, eta_operator, format="csr")
 
     def solve_once(wx: float, wy: float) -> tuple[np.ndarray, float, float]:
-        grid = boundary_grid.copy()
+        grid = centered_boundary_grid.copy()
         matrix = wx * matrix_xi + wy * matrix_eta
         rhs = np.zeros((ni, nj, 2), dtype=float)
-        rhs[0, :, :] += wx * boundary_grid[0, 1:-1]
-        rhs[-1, :, :] += wx * boundary_grid[-1, 1:-1]
-        rhs[:, 0, :] += wy * boundary_grid[1:-1, 0]
-        rhs[:, -1, :] += wy * boundary_grid[1:-1, -1]
+        rhs[0, :, :] += wx * centered_boundary_grid[0, 1:-1]
+        rhs[-1, :, :] += wx * centered_boundary_grid[-1, 1:-1]
+        rhs[:, 0, :] += wy * centered_boundary_grid[1:-1, 0]
+        rhs[:, -1, :] += wy * centered_boundary_grid[1:-1, -1]
         solution = splu(matrix.tocsc()).solve(rhs.reshape((ni * nj, 2)))
         grid[1:-1, 1:-1] = solution.reshape((ni, nj, 2))
         normalized_residual, raw_residual = _linear_residual(
@@ -432,6 +440,11 @@ def generate_harmonic(
     geometry_valid = bool(
         np.all(np.isfinite(grid)) and min_signed_jacobian(grid) > 0.0
     )
+    output_grid = grid + coordinate_origin
+    output_grid[:, 0] = boundary_grid[:, 0]
+    output_grid[:, -1] = boundary_grid[:, -1]
+    output_grid[0, :] = boundary_grid[0, :]
+    output_grid[-1, :] = boundary_grid[-1, :]
     if not geometry_valid:
         message = "Linear equations converged, but the grid is folded"
     elif balance_stiffness:
@@ -440,7 +453,7 @@ def generate_harmonic(
         message = "Sparse direct solve with prescribed stiffnesses"
     return GridResult(
         method="Метод упругих нитей",
-        grid=grid,
+        grid=output_grid,
         converged=bool(solver_converged and balance_converged and geometry_valid),
         iterations=iteration,
         residual=residual,
@@ -693,23 +706,25 @@ def generate_winslow(
         raise ValueError("jacobian_floor must be non-negative")
     started = time.perf_counter()
     template = coons_patch(boundary, n_xi, n_eta)
+    coordinate_origin = template[0, 0].copy()
+    centered_template = template - coordinate_origin
     target_jacobian = boundary_area(boundary)
     derivative_jacobian_floor = jacobian_floor * target_jacobian
     raw_jacobian_floor = derivative_jacobian_floor / (
         (n_xi - 1) * (n_eta - 1)
     )
-    if min_signed_jacobian(template) <= raw_jacobian_floor:
+    if min_signed_jacobian(centered_template) <= raw_jacobian_floor:
         raise ValueError("Initial grid is folded; Winslow minimization cannot start")
 
     length_scale = math.sqrt(target_jacobian)
 
     def fun(scaled: np.ndarray) -> tuple[float, np.ndarray]:
         value, physical_gradient = _winslow_objective_and_gradient(
-            scaled * length_scale, template, derivative_jacobian_floor
+            scaled * length_scale, centered_template, derivative_jacobian_floor
         )
         return value, physical_gradient * length_scale
 
-    initial = _pack_interior(template) / length_scale
+    initial = _pack_interior(centered_template) / length_scale
     initial_value, _ = fun(initial)
     (
         optimum,
@@ -725,8 +740,13 @@ def generate_winslow(
         max_iterations=max_iterations,
         gradient_tolerance=gradient_tolerance,
     )
-    grid = _unpack_interior(template, optimum * length_scale)
-    valid = min_signed_jacobian(grid) > raw_jacobian_floor
+    centered_grid = _unpack_interior(centered_template, optimum * length_scale)
+    valid = min_signed_jacobian(centered_grid) > raw_jacobian_floor
+    grid = centered_grid + coordinate_origin
+    grid[:, 0] = template[:, 0]
+    grid[:, -1] = template[:, -1]
+    grid[0, :] = template[0, :]
+    grid[-1, :] = template[-1, :]
     converged = bool(
         valid
         and np.all(np.isfinite(grid))
@@ -879,26 +899,28 @@ def generate_adaptive_tension(
         raise ValueError("orientation_barrier must be non-negative")
     started = time.perf_counter()
     template = coons_patch(boundary, n_xi, n_eta)
+    coordinate_origin = template[0, 0].copy()
+    centered_template = template - coordinate_origin
     target_jacobian = boundary_area(boundary)
     derivative_jacobian_floor = jacobian_floor * target_jacobian
     raw_jacobian_floor = derivative_jacobian_floor / (
         (n_xi - 1) * (n_eta - 1)
     )
-    if min_signed_jacobian(template) <= raw_jacobian_floor:
+    if min_signed_jacobian(centered_template) <= raw_jacobian_floor:
         raise ValueError("Initial grid is folded; adaptive tension cannot start")
     length_scale = math.sqrt(target_jacobian)
 
     def fun(scaled: np.ndarray) -> tuple[float, np.ndarray]:
         value, physical_gradient = _adaptive_objective_and_gradient(
             scaled * length_scale,
-            template,
+            centered_template,
             target_jacobian,
             derivative_jacobian_floor,
             orientation_barrier,
         )
         return value, physical_gradient * length_scale
 
-    initial = _pack_interior(template) / length_scale
+    initial = _pack_interior(centered_template) / length_scale
     initial_value, initial_gradient = fun(initial)
     (
         optimum,
@@ -914,8 +936,13 @@ def generate_adaptive_tension(
         max_iterations=max_iterations,
         gradient_tolerance=gradient_tolerance,
     )
-    grid = _unpack_interior(template, optimum * length_scale)
-    valid = min_signed_jacobian(grid) > raw_jacobian_floor
+    centered_grid = _unpack_interior(centered_template, optimum * length_scale)
+    valid = min_signed_jacobian(centered_grid) > raw_jacobian_floor
+    grid = centered_grid + coordinate_origin
+    grid[:, 0] = template[:, 0]
+    grid[:, -1] = template[:, -1]
+    grid[0, :] = template[0, :]
+    grid[-1, :] = template[-1, :]
     converged = bool(
         valid
         and np.all(np.isfinite(grid))
@@ -956,7 +983,14 @@ generate_metric_variational = generate_adaptive_tension
 
 
 def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
-    grid = result.grid
+    physical_grid = np.asarray(result.grid, dtype=float)
+    coordinate_scale = float(np.max(np.ptp(physical_grid, axis=(0, 1))))
+    if not np.isfinite(coordinate_scale) or coordinate_scale <= 0.0:
+        raise ValueError("Grid extent must be positive and finite")
+    # Compute dimensionless quality indicators after centering and scaling.
+    # Absolute denominator floors would otherwise corrupt Q_orth, J_sc, and
+    # AR_95 for geometrically identical grids expressed in tiny units.
+    grid = (physical_grid - physical_grid[0, 0]) / coordinate_scale
     n_xi, n_eta, _ = grid.shape
     dxi = 1.0 / (n_xi - 1)
     deta = 1.0 / (n_eta - 1)
@@ -970,7 +1004,17 @@ def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
     b = np.sum(p * q, axis=-1)
     c = np.sum(q * q, axis=-1)
     jacobian = _cross2(p, q)
-    cos_sq = np.clip(b**2 / np.maximum(a * c, 1e-30), 0.0, 1.0)
+    center_denominator = a * c
+    cos_sq = np.clip(
+        np.divide(
+            b**2,
+            center_denominator,
+            out=np.full_like(center_denominator, np.nan),
+            where=center_denominator > 0.0,
+        ),
+        0.0,
+        1.0,
+    )
 
     # Original thesis criterion (main.tex, eq. at lines 854--856):
     # mean(sin^2(theta)) at interior nodes, where one is best.
@@ -982,7 +1026,14 @@ def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
         * np.sum(interior_eta * interior_eta, axis=-1)
     )
     interior_cos_sq = np.clip(
-        interior_dot**2 / np.maximum(interior_norm_sq, 1e-30), 0.0, 1.0
+        np.divide(
+            interior_dot**2,
+            interior_norm_sq,
+            out=np.full_like(interior_norm_sq, np.nan),
+            where=interior_norm_sq > 0.0,
+        ),
+        0.0,
+        1.0,
     )
     orthogonality_score = float(np.mean(1.0 - interior_cos_sq))
 
@@ -999,10 +1050,16 @@ def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
     )
     scaled = np.stack(
         [
-            corners[..., k]
-            / np.maximum(
-                np.linalg.norm(pair[0], axis=-1) * np.linalg.norm(pair[1], axis=-1),
-                1e-30,
+            np.divide(
+                corners[..., k],
+                np.linalg.norm(pair[0], axis=-1)
+                * np.linalg.norm(pair[1], axis=-1),
+                out=np.full_like(corners[..., k], np.nan),
+                where=(
+                    np.linalg.norm(pair[0], axis=-1)
+                    * np.linalg.norm(pair[1], axis=-1)
+                    > 0.0
+                ),
             )
             for k, pair in enumerate(edge_pairs)
         ],
@@ -1014,10 +1071,10 @@ def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
     xi_lengths = np.linalg.norm(grid[1:, :] - grid[:-1, :], axis=-1)
     eta_lengths = np.linalg.norm(grid[:, 1:] - grid[:, :-1], axis=-1)
     backward_xi = np.linalg.norm(
-        grid[1:, 1:] - grid[:-1, 1:], axis=-1
+        physical_grid[1:, 1:] - physical_grid[:-1, 1:], axis=-1
     )
     backward_eta = np.linalg.norm(
-        grid[1:, 1:] - grid[1:, :-1], axis=-1
+        physical_grid[1:, 1:] - physical_grid[1:, :-1], axis=-1
     )
     directional_length_difference = float(
         np.mean(np.abs(backward_xi - backward_eta))
@@ -1027,11 +1084,23 @@ def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
         mean = float(np.mean(values))
         return float(np.std(values) / mean) if mean > 0.0 else math.inf
 
-    trace = a + c
-    discriminant = np.sqrt(np.maximum((a - c) ** 2 + 4.0 * b**2, 0.0))
-    lambda_max = 0.5 * (trace + discriminant)
-    lambda_min = np.maximum(0.5 * (trace - discriminant), 1e-30)
-    aspect = np.sqrt(lambda_max / lambda_min)
+    deformation = np.stack((p, q), axis=-1)
+    singular_values = np.linalg.svd(deformation, compute_uv=False)
+    aspect = np.divide(
+        singular_values[..., 0],
+        singular_values[..., 1],
+        out=np.full_like(singular_values[..., 0], math.inf),
+        where=singular_values[..., 1] > 0.0,
+    )
+    physical_p = 0.5 * (
+        (physical_grid[1:, :-1] - physical_grid[:-1, :-1])
+        + (physical_grid[1:, 1:] - physical_grid[:-1, 1:])
+    ) / dxi
+    physical_q = 0.5 * (
+        (physical_grid[:-1, 1:] - physical_grid[:-1, :-1])
+        + (physical_grid[1:, 1:] - physical_grid[1:, :-1])
+    ) / deta
+    physical_jacobian = _cross2(physical_p, physical_q)
 
     return {
         "method": result.method,
@@ -1050,7 +1119,7 @@ def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
         "edge_cv": 0.5
         * (coefficient_of_variation(xi_lengths) + coefficient_of_variation(eta_lengths)),
         "aspect_p95": float(np.percentile(aspect, 95.0)),
-        "min_center_jacobian": float(np.min(jacobian)),
+        "min_center_jacobian": float(np.min(physical_jacobian)),
     }
 
 
