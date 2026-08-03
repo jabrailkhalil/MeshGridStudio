@@ -102,6 +102,24 @@ class BoundaryTests(unittest.TestCase):
         self.assertTrue(np.array_equal(grid[0, :], sampled[0, :]))
         self.assertTrue(np.array_equal(grid[-1, :], sampled[-1, :]))
 
+    def test_corner_tolerance_is_scale_aware_but_rejects_real_gaps(self) -> None:
+        for radius in (1.0, 1e4, 1e9):
+            with self.subTest(radius=radius):
+                meshes.validate_boundary(meshes.circle_boundary(radius))
+
+        base = meshes.square_boundary()
+
+        def gapped_right(t: np.ndarray) -> np.ndarray:
+            points = base.right(t).copy()
+            points[..., 1] += 1e-8 * (1.0 - np.asarray(t))
+            return points
+
+        gapped = meshes.Boundary(
+            "Контур с разрывом", base.bottom, gapped_right, base.top, base.left
+        )
+        with self.assertRaisesRegex(ValueError, "corner gap"):
+            meshes.validate_boundary(gapped)
+
 
 class AlgorithmTests(unittest.TestCase):
     def test_affine_square_is_fixed_point_for_all_methods(self) -> None:
@@ -232,6 +250,58 @@ class AlgorithmTests(unittest.TestCase):
                     np.max(np.abs(grid - normalized_grids[0])), 2e-8
                 )
 
+    def test_elastic_convergence_status_is_scale_and_weight_invariant(self) -> None:
+        normalized_residuals = []
+        for half_width, weight in (
+            (1e-7, 1.0),
+            (1.0, 1.0),
+            (1e6, 1.0),
+            (1e9, 1e6),
+        ):
+            result = meshes.generate_harmonic(
+                meshes.square_boundary(half_width),
+                9,
+                7,
+                weight_xi=weight,
+                weight_eta=weight,
+                balance_stiffness=False,
+            )
+            self.assertTrue(result.converged, result.message)
+            normalized_residuals.append(result.residual)
+        self.assertLess(max(normalized_residuals), 1e-12)
+
+    def test_balance_relaxation_changes_speed_not_fixed_point(self) -> None:
+        damped = meshes.generate_harmonic(
+            meshes.arch_boundary(), 15, 15, balance_relaxation=0.5
+        )
+        undamped = meshes.generate_harmonic(
+            meshes.arch_boundary(), 15, 15, balance_relaxation=1.0
+        )
+        self.assertTrue(damped.converged, damped.message)
+        self.assertTrue(undamped.converged, undamped.message)
+        self.assertGreater(damped.iterations, undamped.iterations)
+        self.assertAlmostEqual(
+            float(damped.parameters["stiffness_ratio"]),
+            float(undamped.parameters["stiffness_ratio"]),
+            places=9,
+        )
+        self.assertLess(np.max(np.abs(damped.grid - undamped.grid)), 2e-9)
+
+    def test_infeasible_lbfgs_start_cannot_report_convergence(self) -> None:
+        def infeasible(x: np.ndarray) -> tuple[float, np.ndarray]:
+            return 1e100, np.zeros_like(x)
+
+        _, converged, iterations, _, residual, message, _ = meshes._feasible_lbfgs(
+            infeasible,
+            np.zeros(4),
+            max_iterations=10,
+            gradient_tolerance=1e-6,
+        )
+        self.assertFalse(converged)
+        self.assertEqual(iterations, 0)
+        self.assertTrue(np.isinf(residual))
+        self.assertEqual(message, "Initial point is infeasible")
+
 
 class GradientTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -269,7 +339,7 @@ class MetricTests(unittest.TestCase):
         metrics = meshes.grid_metrics(result)
         self.assertEqual(metrics["inverted_cells"], 0)
         self.assertAlmostEqual(float(metrics["orthogonality_score"]), 1.0, places=12)
-        self.assertAlmostEqual(float(metrics["orthogonality_error"]), 0.0, places=12)
+        self.assertAlmostEqual(float(metrics["center_rms_cosine"]), 0.0, places=12)
         self.assertAlmostEqual(float(metrics["area_cv"]), 0.0, places=12)
         self.assertAlmostEqual(float(metrics["min_scaled_jacobian"]), 1.0, places=12)
         expected_length_difference = abs(2.0 / 7.0 - 2.0 / 5.0)

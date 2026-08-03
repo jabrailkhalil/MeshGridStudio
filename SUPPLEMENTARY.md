@@ -11,7 +11,7 @@
 
 - `article.tex`, `mesh_methods.py`, `mesh_gui.py`,
   `mesh_gui_model.py` — статья и программная реализация;
-- `test_mesh_methods.py`, `test_mesh_gui.py` — 25 автоматических тестов;
+- `test_mesh_methods.py`, `test_mesh_gui.py` — 30 автоматических тестов;
 - `requirements*.txt`, `build_exe.ps1`,
   `mesh_grid_studio_version.txt` — зависимости и сборка приложения;
 - `output/generated/` — CSV, JSON, таблица и рисунки основной серии,
@@ -19,9 +19,8 @@
 - `output/pdf/article.pdf` — собранная статья;
 - `output/app/ui-preview-fast-exe.png`, `docs/ui-preview.png` —
   изображения интерфейса, используемые статьёй и README;
-- `main.tex`, `pics/`, `tishkin_grid.tex` — неизменённый исходный текст
-  исследования с исходными рисунками и сохранившийся фрагмент
-  материалов, атрибутированный В. Ф. Тишкину в исходной работе;
+- `tishkin_grid.tex` — сохранившийся фрагмент материалов,
+  атрибутированный В. Ф. Тишкину в исходной работе;
 - `README.md`, `AUDIT.md`, `SUPPLEMENTARY.md` — описание проекта,
   технический аудит и настоящая инструкция.
 
@@ -38,6 +37,10 @@ python mesh_methods.py --adaptive-mu0-control --output-dir output/generated
 pdflatex -interaction=nonstopmode -halt-on-error -output-directory=output/pdf article.tex
 pdflatex -interaction=nonstopmode -halt-on-error -output-directory=output/pdf article.tex
 ```
+
+Для PDF нужен pdfLaTeX с пакетами из преамбулы и масштабируемыми
+кириллическими шрифтами `cm-super`. Команда `pdffonts
+output/pdf/article.pdf` не должна показывать шрифты Type 3.
 
 Для сборки приложения:
 

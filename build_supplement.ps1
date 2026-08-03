@@ -42,11 +42,11 @@ $rootFiles = @(
     "AUDIT.md",
     "build_exe.ps1",
     "build_supplement.ps1",
-    "main.tex",
     "mesh_grid_studio_version.txt",
     "mesh_gui.py",
     "mesh_gui_model.py",
     "mesh_methods.py",
+    "package_supplement.py",
     "README.md",
     "requirements-build.txt",
     "requirements.txt",
@@ -98,19 +98,14 @@ Copy-RequiredFile `
     -Source (Join-Path $projectRoot "docs\ui-preview.png") `
     -Destination (Join-Path $stagingDirectory "docs\ui-preview.png")
 
-$picturesSource = Join-Path $projectRoot "pics"
-$picturesDestination = Join-Path $stagingDirectory "pics"
-if (-not (Test-Path -LiteralPath $picturesSource -PathType Container)) {
-    throw "Original figures directory not found: $picturesSource"
-}
-Copy-Item -LiteralPath $picturesSource -Destination $picturesDestination `
-    -Recurse -Force
-
 if (Test-Path -LiteralPath $temporaryArchive) {
     Remove-Item -LiteralPath $temporaryArchive -Force
 }
-Compress-Archive -Path (Join-Path $stagingDirectory "*") `
-    -DestinationPath $temporaryArchive -CompressionLevel Optimal
+& python (Join-Path $projectRoot "package_supplement.py") `
+    $stagingDirectory $temporaryArchive
+if ($LASTEXITCODE -ne 0) {
+    throw "Cross-platform ZIP creation failed with exit code $LASTEXITCODE"
+}
 
 if (Test-Path -LiteralPath $archivePath) {
     Remove-Item -LiteralPath $archivePath -Force
