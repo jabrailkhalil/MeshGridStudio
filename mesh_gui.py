@@ -127,7 +127,7 @@ class MeshDesignerApp:
         self.drag_mode_var = tk.StringVar(value="Углы")
         self.n_xi_var = tk.StringVar(value="15")
         self.n_eta_var = tk.StringVar(value="15")
-        self.max_iterations_var = tk.StringVar(value="2000")
+        self.max_iterations_var = tk.StringVar(value="5000")
         self.tolerance_var = tk.StringVar(value="2e-5")
         self.mu_var = tk.StringVar(value="0.1")
         self.balance_var = tk.BooleanVar(value=True)
@@ -599,7 +599,7 @@ class MeshDesignerApp:
         # Parse only values consumed by the selected solver.  Inactive fields
         # stay editable and legible, but a stale/partial value in one of them
         # must not block an unrelated method.
-        max_iterations = 2_000
+        max_iterations = 5_000
         gradient_tolerance = 2e-5
         adaptive_mu = 0.1
         if method in (METHOD_WINSLOW, METHOD_ADAPTIVE):
@@ -1114,7 +1114,7 @@ class MeshDesignerApp:
             ("Мин. знаковый якобиан", _format_number(float(metrics["min_scaled_jacobian"]))),
             ("Инвертированные ячейки", str(int(metrics["inverted_cells"]))),
             ("CV площадей", _format_number(float(metrics["area_cv"]))),
-            ("AR₉₅", _format_number(float(metrics["aspect_p95"]))),
+            ("AR₉₅ (κ₂)", _format_number(float(metrics["aspect_p95"]))),
         )
         for metric, value in values:
             self.metrics_tree.insert("", "end", values=(metric, value))
@@ -1268,13 +1268,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--solver-self-test",
         action="store_true",
-        help="Run all three packaged numerical methods on a small square and exit",
+        help="Run all three packaged numerical methods on a small circle and exit",
     )
     return parser.parse_args()
 
 
 def _run_solver_self_test() -> None:
-    model = EditableBoundaryModel.from_preset(PRESET_SQUARE, 7, 6)
+    model = EditableBoundaryModel.from_preset(PRESET_CIRCLE, 7, 6)
+    results: dict[str, GridResult] = {}
     for method in (METHOD_ELASTIC, METHOD_WINSLOW, METHOD_ADAPTIVE):
         result = calculate_grid(
             model.to_boundary(),
@@ -1283,12 +1284,28 @@ def _run_solver_self_test() -> None:
                 n_xi=7,
                 n_eta=6,
                 max_iterations=50,
+                gradient_tolerance=2e-6 if method == METHOD_WINSLOW else 2e-5,
             ),
         )
         metrics = grid_metrics(result)
-        if not result.converged or int(metrics["inverted_cells"]) != 0:
+        if (
+            not result.converged
+            or result.iterations <= 0
+            or int(metrics["inverted_cells"]) != 0
+        ):
             raise RuntimeError(
                 f"Packaged self-test failed for {method}: {result.message}"
+            )
+        results[method] = result
+    pairs = (
+        (METHOD_ELASTIC, METHOD_WINSLOW),
+        (METHOD_ELASTIC, METHOD_ADAPTIVE),
+        (METHOD_WINSLOW, METHOD_ADAPTIVE),
+    )
+    for first, second in pairs:
+        if np.max(np.abs(results[first].grid - results[second].grid)) <= 1e-6:
+            raise RuntimeError(
+                f"Packaged self-test found indistinguishable methods: {first}, {second}"
             )
 
 

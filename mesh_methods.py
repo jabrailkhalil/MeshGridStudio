@@ -137,13 +137,18 @@ def validate_boundary(boundary: Boundary, atol: float = 1e-12) -> None:
     """Reject discontinuous, non-finite, self-intersecting, or clockwise boundaries."""
 
     endpoints = [(curve(np.array(0.0)), curve(np.array(1.0))) for curve in boundary.curves]
+    endpoint_points = np.vstack([point for pair in endpoints for point in pair])
+    if not np.all(np.isfinite(endpoint_points)):
+        raise ValueError(f"Boundary {boundary.name!r} has non-finite corners")
+    boundary_scale = max(float(np.max(np.ptp(endpoint_points, axis=0))), 1.0)
+    corner_tolerance = max(
+        float(atol), 64.0 * np.finfo(float).eps * boundary_scale
+    )
     for k, ((_, end), (start_next, _)) in enumerate(
         zip(endpoints, endpoints[1:] + endpoints[:1])
     ):
-        if not np.all(np.isfinite(end)) or not np.all(np.isfinite(start_next)):
-            raise ValueError(f"Boundary {boundary.name!r} has non-finite corner {k}")
-        if not np.allclose(end, start_next, atol=atol, rtol=0.0):
-            gap = float(np.linalg.norm(end - start_next))
+        gap = float(np.linalg.norm(end - start_next))
+        if gap > corner_tolerance:
             raise ValueError(f"Boundary {boundary.name!r} has corner gap {gap:.3e}")
     polygon = _sample_boundary_polygon(boundary, samples_per_side=65)
     if not np.all(np.isfinite(polygon)):
@@ -235,8 +240,14 @@ def first_nonadjacent_segment_intersection(
 
 def boundary_area(boundary: Boundary, samples_per_side: int = 2049) -> float:
     polygon = _sample_boundary_polygon(boundary, samples_per_side)
-    x = polygon[:, 0]
-    y = polygon[:, 1]
+    # The shoelace formula is translation invariant analytically, but its
+    # uncentred products can catastrophically cancel when a small domain is
+    # described far from the coordinate origin.  Translate to a sampled
+    # boundary point before forming the products so that validation and all
+    # area-scaled solvers retain that invariance in floating-point arithmetic.
+    centered = polygon - polygon[0]
+    x = centered[:, 0]
+    y = centered[:, 1]
     return float(0.5 * np.sum(x * np.roll(y, -1) - y * np.roll(x, -1)))
 
 
@@ -313,9 +324,12 @@ def min_signed_jacobian(grid: np.ndarray) -> float:
 
 
 def _linear_residual(
-    grid: np.ndarray, weight_xi: float, weight_eta: float
-) -> float:
-    """Residual of the spring equilibrium written in the thesis."""
+    grid: np.ndarray,
+    weight_xi: float,
+    weight_eta: float,
+    length_scale: float,
+) -> tuple[float, float]:
+    """Return dimensionless and raw residuals of the spring equilibrium."""
 
     wx = weight_xi
     wy = weight_eta
@@ -323,7 +337,9 @@ def _linear_residual(
         wx * (grid[2:, 1:-1] - 2.0 * grid[1:-1, 1:-1] + grid[:-2, 1:-1])
         + wy * (grid[1:-1, 2:] - 2.0 * grid[1:-1, 1:-1] + grid[1:-1, :-2])
     )
-    return float(np.max(np.linalg.norm(residual, axis=-1), initial=0.0))
+    raw = float(np.max(np.linalg.norm(residual, axis=-1), initial=0.0))
+    normalized = raw / ((wx + wy) * length_scale)
+    return normalized, raw
 
 
 def generate_harmonic(
@@ -347,8 +363,8 @@ def generate_harmonic(
     # Delay the relatively heavy SciPy import until a numerical solve is
     # actually requested.  This keeps the interactive editor's initial window
     # and Coons preview responsive while preserving the identical solver.
-    from scipy.sparse import lil_matrix
-    from scipy.sparse.linalg import spsolve
+    from scipy.sparse import diags, eye, kron
+    from scipy.sparse.linalg import splu
 
     if weight_xi <= 0.0 or weight_eta <= 0.0:
         raise ValueError("Harmonic weights must be positive")
@@ -361,44 +377,51 @@ def generate_harmonic(
     started = time.perf_counter()
     ni = n_xi - 2
     nj = n_eta - 2
-    unknowns = ni * nj
+    boundary_grid = sample_boundary(boundary, n_xi, n_eta)
+    coordinate_origin = boundary_grid[0, 0].copy()
+    centered_boundary_grid = boundary_grid - coordinate_origin
+    area = boundary_area(boundary)
+    if not np.isfinite(area) or area <= 0.0:
+        raise ValueError("Boundary area must be positive and finite")
+    length_scale = math.sqrt(area)
+    xi_operator = diags(
+        (-np.ones(ni - 1), 2.0 * np.ones(ni), -np.ones(ni - 1)),
+        offsets=(-1, 0, 1),
+        shape=(ni, ni),
+        format="csr",
+    )
+    eta_operator = diags(
+        (-np.ones(nj - 1), 2.0 * np.ones(nj), -np.ones(nj - 1)),
+        offsets=(-1, 0, 1),
+        shape=(nj, nj),
+        format="csr",
+    )
+    identity_xi = eye(ni, format="csr")
+    identity_eta = eye(nj, format="csr")
+    matrix_xi = kron(xi_operator, identity_eta, format="csr")
+    matrix_eta = kron(identity_xi, eta_operator, format="csr")
 
-    def index(i: int, j: int) -> int:
-        return (i - 1) * nj + (j - 1)
-
-    def solve_once(wx: float, wy: float) -> tuple[np.ndarray, float]:
-        grid = sample_boundary(boundary, n_xi, n_eta)
-        matrix = lil_matrix((unknowns, unknowns), dtype=float)
-        rhs = np.zeros((unknowns, 2), dtype=float)
-        for i in range(1, n_xi - 1):
-            for j in range(1, n_eta - 1):
-                row = index(i, j)
-                matrix[row, row] = 2.0 * (wx + wy)
-                for ii, jj, coefficient in (
-                    (i - 1, j, wx),
-                    (i + 1, j, wx),
-                    (i, j - 1, wy),
-                    (i, j + 1, wy),
-                ):
-                    if ii in (0, n_xi - 1) or jj in (0, n_eta - 1):
-                        rhs[row] += coefficient * grid[ii, jj]
-                    else:
-                        matrix[row, index(ii, jj)] = -coefficient
-        solution = np.column_stack(
-            (
-                spsolve(matrix.tocsr(), rhs[:, 0]),
-                spsolve(matrix.tocsr(), rhs[:, 1]),
-            )
-        )
+    def solve_once(wx: float, wy: float) -> tuple[np.ndarray, float, float]:
+        grid = centered_boundary_grid.copy()
+        matrix = wx * matrix_xi + wy * matrix_eta
+        rhs = np.zeros((ni, nj, 2), dtype=float)
+        rhs[0, :, :] += wx * centered_boundary_grid[0, 1:-1]
+        rhs[-1, :, :] += wx * centered_boundary_grid[-1, 1:-1]
+        rhs[:, 0, :] += wy * centered_boundary_grid[1:-1, 0]
+        rhs[:, -1, :] += wy * centered_boundary_grid[1:-1, -1]
+        solution = splu(matrix.tocsc()).solve(rhs.reshape((ni * nj, 2)))
         grid[1:-1, 1:-1] = solution.reshape((ni, nj, 2))
-        return grid, _linear_residual(grid, wx, wy)
+        normalized_residual, raw_residual = _linear_residual(
+            grid, wx, wy, length_scale
+        )
+        return grid, normalized_residual, raw_residual
 
     ratio = weight_xi / weight_eta
     balance_history: list[float] = []
     balance_converged = not balance_stiffness
     for iteration in range(1, balance_max_iterations + 1):
         final_weight_xi = ratio * weight_eta
-        grid, residual = solve_once(final_weight_xi, weight_eta)
+        grid, residual, raw_residual = solve_once(final_weight_xi, weight_eta)
         lengths_xi_sq = float(np.sum((grid[1:, :] - grid[:-1, :]) ** 2))
         lengths_eta_sq = float(np.sum((grid[:, 1:] - grid[:, :-1]) ** 2))
         target_ratio = lengths_eta_sq / lengths_xi_sq
@@ -417,6 +440,11 @@ def generate_harmonic(
     geometry_valid = bool(
         np.all(np.isfinite(grid)) and min_signed_jacobian(grid) > 0.0
     )
+    output_grid = grid + coordinate_origin
+    output_grid[:, 0] = boundary_grid[:, 0]
+    output_grid[:, -1] = boundary_grid[:, -1]
+    output_grid[0, :] = boundary_grid[0, :]
+    output_grid[-1, :] = boundary_grid[-1, :]
     if not geometry_valid:
         message = "Linear equations converged, but the grid is folded"
     elif balance_stiffness:
@@ -425,7 +453,7 @@ def generate_harmonic(
         message = "Sparse direct solve with prescribed stiffnesses"
     return GridResult(
         method="Метод упругих нитей",
-        grid=grid,
+        grid=output_grid,
         converged=bool(solver_converged and balance_converged and geometry_valid),
         iterations=iteration,
         residual=residual,
@@ -437,6 +465,11 @@ def generate_harmonic(
             "stiffness_ratio": final_weight_xi / weight_eta,
             "balance_stiffness": str(balance_stiffness),
             "energy_mismatch": balance_history[-1],
+            "balance_tolerance": balance_tolerance,
+            "balance_max_iterations": balance_max_iterations,
+            "balance_relaxation": balance_relaxation,
+            "length_scale": length_scale,
+            "raw_linear_residual": raw_residual,
             "solver_converged": str(solver_converged),
             "geometry_valid": str(geometry_valid),
         },
@@ -477,10 +510,27 @@ def _feasible_lbfgs(
         raise ValueError("memory_size must be at least one")
     x = np.asarray(initial, dtype=float).copy()
     value, gradient = fun(x)
+    gradient = np.asarray(gradient, dtype=float)
     history = [float(value)]
     corrections: list[tuple[np.ndarray, np.ndarray, float]] = []
     message = "Maximum iteration count reached"
     converged = False
+
+    if (
+        not np.isfinite(value)
+        or value >= 1e90
+        or gradient.shape != x.shape
+        or not np.all(np.isfinite(gradient))
+    ):
+        return (
+            x,
+            False,
+            0,
+            float(value),
+            math.inf,
+            "Initial point is infeasible",
+            history,
+        )
 
     for iteration in range(max_iterations + 1):
         gradient_norm = float(np.linalg.norm(gradient, ord=np.inf))
@@ -519,9 +569,12 @@ def _feasible_lbfgs(
         for _ in range(100):
             trial_x = x + step * direction
             trial_value, trial_gradient = fun(trial_x)
+            trial_gradient = np.asarray(trial_gradient, dtype=float)
             if (
                 np.isfinite(trial_value)
                 and trial_value < 1e90
+                and trial_gradient.shape == x.shape
+                and np.all(np.isfinite(trial_gradient))
                 and trial_value
                 <= value + 1e-4 * step * directional_derivative
             ):
@@ -653,23 +706,25 @@ def generate_winslow(
         raise ValueError("jacobian_floor must be non-negative")
     started = time.perf_counter()
     template = coons_patch(boundary, n_xi, n_eta)
+    coordinate_origin = template[0, 0].copy()
+    centered_template = template - coordinate_origin
     target_jacobian = boundary_area(boundary)
     derivative_jacobian_floor = jacobian_floor * target_jacobian
     raw_jacobian_floor = derivative_jacobian_floor / (
         (n_xi - 1) * (n_eta - 1)
     )
-    if min_signed_jacobian(template) <= raw_jacobian_floor:
+    if min_signed_jacobian(centered_template) <= raw_jacobian_floor:
         raise ValueError("Initial grid is folded; Winslow minimization cannot start")
 
     length_scale = math.sqrt(target_jacobian)
 
     def fun(scaled: np.ndarray) -> tuple[float, np.ndarray]:
         value, physical_gradient = _winslow_objective_and_gradient(
-            scaled * length_scale, template, derivative_jacobian_floor
+            scaled * length_scale, centered_template, derivative_jacobian_floor
         )
         return value, physical_gradient * length_scale
 
-    initial = _pack_interior(template) / length_scale
+    initial = _pack_interior(centered_template) / length_scale
     initial_value, _ = fun(initial)
     (
         optimum,
@@ -685,8 +740,13 @@ def generate_winslow(
         max_iterations=max_iterations,
         gradient_tolerance=gradient_tolerance,
     )
-    grid = _unpack_interior(template, optimum * length_scale)
-    valid = min_signed_jacobian(grid) > raw_jacobian_floor
+    centered_grid = _unpack_interior(centered_template, optimum * length_scale)
+    valid = min_signed_jacobian(centered_grid) > raw_jacobian_floor
+    grid = centered_grid + coordinate_origin
+    grid[:, 0] = template[:, 0]
+    grid[:, -1] = template[:, -1]
+    grid[0, :] = template[0, :]
+    grid[-1, :] = template[-1, :]
     converged = bool(
         valid
         and np.all(np.isfinite(grid))
@@ -839,26 +899,28 @@ def generate_adaptive_tension(
         raise ValueError("orientation_barrier must be non-negative")
     started = time.perf_counter()
     template = coons_patch(boundary, n_xi, n_eta)
+    coordinate_origin = template[0, 0].copy()
+    centered_template = template - coordinate_origin
     target_jacobian = boundary_area(boundary)
     derivative_jacobian_floor = jacobian_floor * target_jacobian
     raw_jacobian_floor = derivative_jacobian_floor / (
         (n_xi - 1) * (n_eta - 1)
     )
-    if min_signed_jacobian(template) <= raw_jacobian_floor:
+    if min_signed_jacobian(centered_template) <= raw_jacobian_floor:
         raise ValueError("Initial grid is folded; adaptive tension cannot start")
     length_scale = math.sqrt(target_jacobian)
 
     def fun(scaled: np.ndarray) -> tuple[float, np.ndarray]:
         value, physical_gradient = _adaptive_objective_and_gradient(
             scaled * length_scale,
-            template,
+            centered_template,
             target_jacobian,
             derivative_jacobian_floor,
             orientation_barrier,
         )
         return value, physical_gradient * length_scale
 
-    initial = _pack_interior(template) / length_scale
+    initial = _pack_interior(centered_template) / length_scale
     initial_value, initial_gradient = fun(initial)
     (
         optimum,
@@ -874,8 +936,13 @@ def generate_adaptive_tension(
         max_iterations=max_iterations,
         gradient_tolerance=gradient_tolerance,
     )
-    grid = _unpack_interior(template, optimum * length_scale)
-    valid = min_signed_jacobian(grid) > raw_jacobian_floor
+    centered_grid = _unpack_interior(centered_template, optimum * length_scale)
+    valid = min_signed_jacobian(centered_grid) > raw_jacobian_floor
+    grid = centered_grid + coordinate_origin
+    grid[:, 0] = template[:, 0]
+    grid[:, -1] = template[:, -1]
+    grid[0, :] = template[0, :]
+    grid[-1, :] = template[-1, :]
     converged = bool(
         valid
         and np.all(np.isfinite(grid))
@@ -916,7 +983,14 @@ generate_metric_variational = generate_adaptive_tension
 
 
 def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
-    grid = result.grid
+    physical_grid = np.asarray(result.grid, dtype=float)
+    coordinate_scale = float(np.max(np.ptp(physical_grid, axis=(0, 1))))
+    if not np.isfinite(coordinate_scale) or coordinate_scale <= 0.0:
+        raise ValueError("Grid extent must be positive and finite")
+    # Compute dimensionless quality indicators after centering and scaling.
+    # Absolute denominator floors would otherwise corrupt Q_orth, J_sc, and
+    # AR_95 for geometrically identical grids expressed in tiny units.
+    grid = (physical_grid - physical_grid[0, 0]) / coordinate_scale
     n_xi, n_eta, _ = grid.shape
     dxi = 1.0 / (n_xi - 1)
     deta = 1.0 / (n_eta - 1)
@@ -930,7 +1004,17 @@ def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
     b = np.sum(p * q, axis=-1)
     c = np.sum(q * q, axis=-1)
     jacobian = _cross2(p, q)
-    cos_sq = np.clip(b**2 / np.maximum(a * c, 1e-30), 0.0, 1.0)
+    center_denominator = a * c
+    cos_sq = np.clip(
+        np.divide(
+            b**2,
+            center_denominator,
+            out=np.full_like(center_denominator, np.nan),
+            where=center_denominator > 0.0,
+        ),
+        0.0,
+        1.0,
+    )
 
     # Original thesis criterion (main.tex, eq. at lines 854--856):
     # mean(sin^2(theta)) at interior nodes, where one is best.
@@ -942,7 +1026,14 @@ def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
         * np.sum(interior_eta * interior_eta, axis=-1)
     )
     interior_cos_sq = np.clip(
-        interior_dot**2 / np.maximum(interior_norm_sq, 1e-30), 0.0, 1.0
+        np.divide(
+            interior_dot**2,
+            interior_norm_sq,
+            out=np.full_like(interior_norm_sq, np.nan),
+            where=interior_norm_sq > 0.0,
+        ),
+        0.0,
+        1.0,
     )
     orthogonality_score = float(np.mean(1.0 - interior_cos_sq))
 
@@ -959,10 +1050,16 @@ def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
     )
     scaled = np.stack(
         [
-            corners[..., k]
-            / np.maximum(
-                np.linalg.norm(pair[0], axis=-1) * np.linalg.norm(pair[1], axis=-1),
-                1e-30,
+            np.divide(
+                corners[..., k],
+                np.linalg.norm(pair[0], axis=-1)
+                * np.linalg.norm(pair[1], axis=-1),
+                out=np.full_like(corners[..., k], np.nan),
+                where=(
+                    np.linalg.norm(pair[0], axis=-1)
+                    * np.linalg.norm(pair[1], axis=-1)
+                    > 0.0
+                ),
             )
             for k, pair in enumerate(edge_pairs)
         ],
@@ -974,10 +1071,10 @@ def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
     xi_lengths = np.linalg.norm(grid[1:, :] - grid[:-1, :], axis=-1)
     eta_lengths = np.linalg.norm(grid[:, 1:] - grid[:, :-1], axis=-1)
     backward_xi = np.linalg.norm(
-        grid[1:, 1:] - grid[:-1, 1:], axis=-1
+        physical_grid[1:, 1:] - physical_grid[:-1, 1:], axis=-1
     )
     backward_eta = np.linalg.norm(
-        grid[1:, 1:] - grid[1:, :-1], axis=-1
+        physical_grid[1:, 1:] - physical_grid[1:, :-1], axis=-1
     )
     directional_length_difference = float(
         np.mean(np.abs(backward_xi - backward_eta))
@@ -987,11 +1084,23 @@ def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
         mean = float(np.mean(values))
         return float(np.std(values) / mean) if mean > 0.0 else math.inf
 
-    trace = a + c
-    discriminant = np.sqrt(np.maximum((a - c) ** 2 + 4.0 * b**2, 0.0))
-    lambda_max = 0.5 * (trace + discriminant)
-    lambda_min = np.maximum(0.5 * (trace - discriminant), 1e-30)
-    aspect = np.sqrt(lambda_max / lambda_min)
+    deformation = np.stack((p, q), axis=-1)
+    singular_values = np.linalg.svd(deformation, compute_uv=False)
+    aspect = np.divide(
+        singular_values[..., 0],
+        singular_values[..., 1],
+        out=np.full_like(singular_values[..., 0], math.inf),
+        where=singular_values[..., 1] > 0.0,
+    )
+    physical_p = 0.5 * (
+        (physical_grid[1:, :-1] - physical_grid[:-1, :-1])
+        + (physical_grid[1:, 1:] - physical_grid[:-1, 1:])
+    ) / dxi
+    physical_q = 0.5 * (
+        (physical_grid[:-1, 1:] - physical_grid[:-1, :-1])
+        + (physical_grid[1:, 1:] - physical_grid[1:, :-1])
+    ) / deta
+    physical_jacobian = _cross2(physical_p, physical_q)
 
     return {
         "method": result.method,
@@ -1005,12 +1114,12 @@ def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
         "inverted_cells": int(np.sum(np.any(corners <= 0.0, axis=-1))),
         "orthogonality_score": orthogonality_score,
         "directional_length_difference": directional_length_difference,
-        "orthogonality_error": float(np.sqrt(np.mean(cos_sq))),
+        "center_rms_cosine": float(np.sqrt(np.mean(cos_sq))),
         "area_cv": coefficient_of_variation(np.abs(areas)),
         "edge_cv": 0.5
         * (coefficient_of_variation(xi_lengths) + coefficient_of_variation(eta_lengths)),
         "aspect_p95": float(np.percentile(aspect, 95.0)),
-        "min_center_jacobian": float(np.min(jacobian)),
+        "min_center_jacobian": float(np.min(physical_jacobian)),
     }
 
 
@@ -1084,27 +1193,45 @@ def _format_float(value: float) -> str:
     return f"{value:.4f}"
 
 
+def _format_runtime_ms(value: float) -> str:
+    """Report timings no more precisely than the experiment supports."""
+
+    return f"{value:.1f}" if abs(value) < 1_000.0 else f"{value:.0f}"
+
+
+def _latex_method_name(value: object) -> str:
+    """Render the adaptive parameter with a mathematical Greek mu."""
+
+    label = str(value)
+    marker = "(mu="
+    if marker in label and label.endswith(")"):
+        prefix, parameter = label.rsplit(marker, maxsplit=1)
+        return f"{prefix}($\\mu={parameter[:-1]}$)"
+    return label
+
+
 def write_latex_table(rows: list[dict[str, object]], path: Path) -> None:
     lines = [
-        r"\begin{tabular}{llrrrrrrr}",
+        r"\begin{tabular}{llrrrrrrrr}",
         r"\toprule",
         r"Область & Метод & $Q_{\rm orth}$ & $\sigma_{\rm len}$ & "
         r"$J_{\min}^{\rm sc}$ & $N_{\rm inv}$ & $CV_A$ & $AR_{95}$ & "
-        r"$t$, мс \\",
+        r"$N_{\rm it}$ & $t$, мс \\",
         r"\midrule",
     ]
     for row in rows:
         lines.append(
-            "{} & {} & {} & {} & {} & {} & {} & {} & {} \\\\".format(
+            "{} & {} & {} & {} & {} & {} & {} & {} & {} & {} \\\\".format(
                 row["domain"],
-                row["method"],
+                _latex_method_name(row["method"]),
                 _format_float(float(row["orthogonality_score"])),
                 _format_float(float(row["directional_length_difference"])),
                 _format_float(float(row["min_scaled_jacobian"])),
                 int(row["inverted_cells"]),
                 _format_float(float(row["area_cv"])),
                 _format_float(float(row["aspect_p95"])),
-                _format_float(float(row["runtime_ms"])),
+                int(row["iterations"]),
+                _format_runtime_ms(float(row["runtime_ms"])),
             )
         )
     lines.extend((r"\bottomrule", r"\end{tabular}"))
@@ -1124,6 +1251,8 @@ def run_experiment(
     import scipy
 
     matplotlib.use("Agg")
+    matplotlib.rcParams["pdf.fonttype"] = 42
+    matplotlib.rcParams["ps.fonttype"] = 42
     import matplotlib.pyplot as plt
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1164,7 +1293,7 @@ def run_experiment(
             _plot_grid(
                 ax,
                 result,
-                f"{result.method}\n"
+                f"{_latex_method_name(result.method)}\n"
                 f"$Q_{{orth}}$={metrics['orthogonality_score']:.3f}, "
                 f"$CV_A$={metrics['area_cv']:.3f}",
             )
