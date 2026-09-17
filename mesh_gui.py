@@ -1188,9 +1188,12 @@ class MeshDesignerApp:
             # Replace matplotlib's default 3D mouse handlers with the
             # application's own LMB-rotate / RMB-zoom / wheel-zoom logic.
             try:
-                self.ax.mouse_init(rotate_btn=None, pan_btn=None, zoom_btn=None)
-            except (AttributeError, TypeError):
-                pass
+                self.ax.disable_mouse_rotation()
+            except AttributeError:
+                try:
+                    self.ax.mouse_init(rotate_btn=None, pan_btn=None, zoom_btn=None)
+                except (AttributeError, TypeError):
+                    pass
             self._axes_is_3d = True
             self._set_view("iso")
         elif not self._is_3d() and self._axes_is_3d:
@@ -1215,11 +1218,20 @@ class MeshDesignerApp:
         if method == METHOD_ADAPTIVE:
             adaptive_mu = float(self.mu_var.get().replace(",", "."))
         if self._is_3d():
+            n_xi = int(self.n_xi_var.get())
+            n_eta = int(self.n_eta_var.get())
+            n_zeta = int(self.n_zeta_var.get())
+            if self._preset_value(self.preset_var.get()) == PRESET3D_BALL:
+                # The gnomonic ball degenerates above 9 nodes per direction;
+                # clamp typed values the spinbox arrows already prevent.
+                n_xi = min(n_xi, BALL3D_MAX_N)
+                n_eta = min(n_eta, BALL3D_MAX_N)
+                n_zeta = min(n_zeta, BALL3D_MAX_N)
             settings: Any = CalculationSettings3D(
                 method=method,
-                n_xi=int(self.n_xi_var.get()),
-                n_eta=int(self.n_eta_var.get()),
-                n_zeta=int(self.n_zeta_var.get()),
+                n_xi=n_xi,
+                n_eta=n_eta,
+                n_zeta=n_zeta,
                 max_iterations=max_iterations,
                 gradient_tolerance=gradient_tolerance,
                 adaptive_mu=adaptive_mu,
