@@ -549,6 +549,9 @@ class MeshDesignerApp:
         self.drag_mode_var.set(self._drag_label(drag_value))
         self.metrics_tree.heading("metric", text=self._tt("metric_name"))
         self.metrics_tree.heading("value", text=self._tt("metric_value"))
+        self.view_hint_label.configure(
+            text=self._tt("view_hint_3d" if self._is_3d() else "view_hint_2d")
+        )
         self.root.title(self._tt("app_title"))
         if self.result is not None:
             self._update_metrics()

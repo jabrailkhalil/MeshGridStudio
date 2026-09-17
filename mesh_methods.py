@@ -671,6 +671,8 @@ def generate_winslow(
 
     initial = _pack_interior(template) / length_scale
     initial_value, _ = fun(initial)
+    if not np.isfinite(initial_value) or initial_value >= 1e90:
+        raise ValueError("Initial grid violates the positive-Jacobian barrier")
     (
         optimum,
         optimizer_converged,
@@ -860,6 +862,8 @@ def generate_adaptive_tension(
 
     initial = _pack_interior(template) / length_scale
     initial_value, initial_gradient = fun(initial)
+    if not np.isfinite(initial_value) or initial_value >= 1e90:
+        raise ValueError("Initial grid violates the positive-Jacobian barrier")
     (
         optimum,
         optimizer_converged,
