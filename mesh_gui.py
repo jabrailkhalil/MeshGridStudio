@@ -12,7 +12,9 @@ import csv
 import ctypes
 import json
 import math
+import os
 import queue
+import re
 import sys
 import threading
 import traceback
@@ -193,6 +195,35 @@ UI_TEXTS: dict[str, dict[str, str]] = {
         "dlg_open_project": "Открыть проект",
         "dlg_export_nodes": "Экспортировать узлы",
         "dlg_export_image": "Экспортировать изображение",
+        "compare_button": "Сравнить все методы",
+        "compare_title": "Сравнение методов",
+        "compare_apply": "Показать: {method}",
+        "compare_error": "Сравнение не удалось: {error}",
+        "auto_rotate": "Автоповорот сцены",
+        "advice_label": "Рекомендация",
+        "advice_good": "Качество сетки хорошее.",
+        "advice_inverted": "Сетка содержит инвертированные ячейки — попробуйте другой метод.",
+        "advice_jac": "Минимальный якобиан низкий ({v}) — риск вырождения у границы.",
+        "advice_aspect": "Ячейки вытянуты (AR95={v}) — метод Винслоу обычно даёт лучшую форму.",
+        "advice_cv": "Разброс размеров ячеек велик (CV={v}) — адаптивное натяжение обычно выравнивает их.",
+        "advice_orth": "Ортогональность ниже целевой (Q={v}) — метод Винслоу обычно даёт лучший угол.",
+        "tt_nodes_xi": "Число узлов по направлению ξ (5–81, в 3D 5–21).",
+        "tt_nodes_eta": "Число узлов по направлению η (5–81, в 3D 5–21).",
+        "tt_nodes_zeta": "Число узлов по направлению ζ (3D, 5–21).",
+        "tt_mu": "Вес логарифмического ориентационного барьера адаптивного натяжения (μ ≥ 0).",
+        "tt_tolerance": "Допуск по ℓ∞-норме градиента для остановки оптимизатора.",
+        "tt_max_iterations": "Максимальное число итераций оптимизатора.",
+        "tt_balance": "Уравнивать суммарные энергии семейств нитей (устраняет инверсии в вытянутых областях).",
+        "tt_drag": "Что перемещается левой кнопкой мыши по 2D-области.",
+        "tt_preset": "Готовая область; её граница редактируется в 2D.",
+        "tt_method": "Выбор вариационного принципа построения сетки.",
+        "tt_dimension": "2D — плоские области с редактируемой границей; 3D — гексаэдральные области.",
+        "tt_build": "Построить сетку выбранным методом (Ctrl+Enter, F5).",
+        "tt_compare": "Построить сетку всеми тремя методами и сравнить показатели.",
+        "tt_auto_rotate": "Медленно вращать 3D-сцену; остановится при ручном вращении.",
+        "tt_rotate": "Повернуть сцену на 20°.",
+        "tt_view": "Готовый ракурс камеры.",
+        "close_button": "Закрыть",
     },
     LANG_EN: {
         "app_title": "Mesh Grid Studio — mesh generation",
@@ -303,6 +334,35 @@ UI_TEXTS: dict[str, dict[str, str]] = {
         "dlg_open_project": "Open project",
         "dlg_export_nodes": "Export nodes",
         "dlg_export_image": "Export image",
+        "compare_button": "Compare all methods",
+        "compare_title": "Method comparison",
+        "compare_apply": "Show: {method}",
+        "compare_error": "Comparison failed: {error}",
+        "auto_rotate": "Auto-rotate scene",
+        "advice_label": "Recommendation",
+        "advice_good": "Grid quality is good.",
+        "advice_inverted": "The grid contains inverted cells — try another method.",
+        "advice_jac": "Minimum Jacobian is low ({v}) — risk of boundary degeneration.",
+        "advice_aspect": "Cells are elongated (AR95={v}) — Winslow usually gives better shape.",
+        "advice_cv": "Cell size spread is high (CV={v}) — adaptive tension usually evens it out.",
+        "advice_orth": "Orthogonality is below target (Q={v}) — Winslow usually gives better angles.",
+        "tt_nodes_xi": "Node count along xi (5-81, 5-21 in 3D).",
+        "tt_nodes_eta": "Node count along eta (5-81, 5-21 in 3D).",
+        "tt_nodes_zeta": "Node count along zeta (3D, 5-21).",
+        "tt_mu": "Weight of the logarithmic orientation barrier of adaptive tension (mu >= 0).",
+        "tt_tolerance": "Gradient infinity-norm tolerance for optimizer stopping.",
+        "tt_max_iterations": "Maximum optimizer iterations.",
+        "tt_balance": "Equalize total directional spring energies (fixes inversions in stretched domains).",
+        "tt_drag": "What the left mouse button moves on the 2D region.",
+        "tt_preset": "Ready-made region; its boundary is editable in 2D.",
+        "tt_method": "Variational principle used to build the grid.",
+        "tt_dimension": "2D — planar regions with editable boundary; 3D — hexahedral regions.",
+        "tt_build": "Build the grid with the selected method (Ctrl+Enter, F5).",
+        "tt_compare": "Build the grid with all three methods and compare the metrics.",
+        "tt_auto_rotate": "Slowly rotate the 3D scene; stops on manual rotation.",
+        "tt_rotate": "Rotate the scene by 20 degrees.",
+        "tt_view": "Preset camera angle.",
+        "close_button": "Close",
     },
 }
 
@@ -380,57 +440,498 @@ def _format_number(value: float) -> str:
     return f"{value:.5f}"
 
 
+def _config_path() -> Path:
+    override = os.environ.get("MESHGRID_CONFIG_DIR")
+    if override:
+        return Path(override) / "config.json"
+    base = Path(os.environ.get("APPDATA", str(Path.home()))) / "MeshGridStudio"
+    return base / "config.json"
+
+
+def _load_config() -> dict[str, Any]:
+    try:
+        payload = json.loads(_config_path().read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            return payload
+    except (OSError, ValueError):
+        pass
+    return {}
+
+
+def _store_config(payload: dict[str, Any]) -> None:
+    try:
+        _config_path().parent.mkdir(parents=True, exist_ok=True)
+        _config_path().write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except OSError:
+        pass
+
+
+def _valid_geometry(text: str) -> str | None:
+    match = re.fullmatch(r"(\d+)x(\d+)([+-]\d+)([+-]\d+)", text)
+    if not match:
+        return None
+    width, height = int(match.group(1)), int(match.group(2))
+    if width < 700 or height < 500:
+        return None
+    return text
+
+
+class Tooltip:
+    """Small hover help that reads its text freshly on every show."""
+
+    def __init__(self, widget: Any, get_text: Any):
+        self.widget = widget
+        self.get_text = get_text
+        self._after_id: str | None = None
+        self._tip: tk.Toplevel | None = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        widget.bind("<ButtonPress>", self._hide, add="+")
+
+    def _schedule(self, _event: Any) -> None:
+        try:
+            self._after_id = self.widget.after(600, self._show)
+        except tk.TclError:
+            pass
+
+    def _show(self) -> None:
+        self._after_id = None
+        text = self.get_text()
+        if not text:
+            return
+        try:
+            self._tip = tk.Toplevel(self.widget)
+            self._tip.wm_overrideredirect(True)
+            self._tip.configure(bg="#0b1220", borderwidth=1, relief="solid")
+            label = tk.Label(
+                self._tip,
+                text=text,
+                justify="left",
+                bg="#0b1220",
+                fg=COLORS["text"],
+                font=("Segoe UI", 9),
+                wraplength=300,
+                padx=8,
+                pady=5,
+            )
+            label.pack()
+            x = self.widget.winfo_rootx()
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+            self._tip.wm_geometry(f"+{x}+{y}")
+        except tk.TclError:
+            self._tip = None
+
+    def _hide(self, _event: Any | None = None) -> None:
+        if self._after_id is not None:
+            try:
+                self.widget.after_cancel(self._after_id)
+            except tk.TclError:
+                pass
+            self._after_id = None
+        if self._tip is not None:
+            try:
+                self._tip.destroy()
+            except tk.TclError:
+                pass
+            self._tip = None
+
+
 class MeshDesignerApp:
     """Tk controller with a Matplotlib viewport and background solvers."""
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.lang_code = LANG_EN
-        self.lang_label = "EN"
+        self._config = _load_config()
+        self.lang_code = LANG_EN if self._config.get("lang", "EN") == "EN" else LANG_RU
+        self.lang_label = "EN" if self.lang_code == LANG_EN else "RU"
         self._label_widgets: list[tuple[Any, str]] = []
+        self._tooltips: list[Tooltip] = []
         self.root.title(self._tt("app_title"))
-        self.root.geometry("1460x900")
+        geometry = _valid_geometry(str(self._config.get("geometry", "")))
+        self.root.geometry(geometry or "1460x900")
         self.root.minsize(1120, 720)
         self.root.configure(bg=COLORS["window"])
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
+        self.dimension = (
+            DIMENSION_3D if self._config.get("dimension") == DIMENSION_3D else DIMENSION_2D
+        )
         self.lang_var = tk.StringVar(value=self.lang_label)
-        self.method_var = tk.StringVar(value=self._tt("method_elastic"))
-        self.preset_var = tk.StringVar(value=self._tt("preset_square"))
-        self.drag_mode_var = tk.StringVar(value=self._tt("drag_corners"))
-        self.dimension_var = tk.StringVar(value=DIMENSION_2D)
-        self.n_xi_var = tk.StringVar(value="15")
-        self.n_eta_var = tk.StringVar(value="15")
-        self.n_zeta_var = tk.StringVar(value="9")
-        self.max_iterations_var = tk.StringVar(value="2000")
-        self.tolerance_var = tk.StringVar(value="2e-5")
-        self.mu_var = tk.StringVar(value="0.1")
-        self.balance_var = tk.BooleanVar(value=True)
+        self.method_var = tk.StringVar(
+            value=self._method_label(self._config.get("method", METHOD_ELASTIC))
+        )
+        preset_value = (
+            self._config.get("preset3d", PRESET3D_CUBE)
+            if self.dimension == DIMENSION_3D
+            else self._config.get("preset2d", PRESET_SQUARE)
+        )
+        self.preset_var = tk.StringVar(value=self._preset_label(preset_value))
+        self.drag_mode_var = tk.StringVar(
+            value=self._drag_label(self._config.get("drag", DRAG_CORNERS))
+        )
+        self.dimension_var = tk.StringVar(value=self.dimension)
+        self.n_xi_var = tk.StringVar(value=str(self._config.get("n_xi", "15")))
+        self.n_eta_var = tk.StringVar(value=str(self._config.get("n_eta", "15")))
+        self.n_zeta_var = tk.StringVar(value=str(self._config.get("n_zeta", "9")))
+        self.max_iterations_var = tk.StringVar(value=str(self._config.get("max_iterations", 2000)))
+        self.tolerance_var = tk.StringVar(value=f"{self._config.get('gradient_tolerance', 2e-5):g}")
+        self.mu_var = tk.StringVar(value=f"{self._config.get('adaptive_mu', 0.1):g}")
+        self.balance_var = tk.BooleanVar(value=bool(self._config.get("balance_stiffness", True)))
         self.auto_rebuild_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value=self._tt("status_initial"))
         self.method_hint_var = tk.StringVar()
         self.header_var = tk.StringVar(value=self._tt("header_preview_2d"))
+        self.auto_rotate_var = tk.BooleanVar(value=False)
 
-        self.dimension = DIMENSION_2D
-        self.model = EditableBoundaryModel.from_preset(PRESET_SQUARE, 15, 15)
+        self.dimension = (
+            DIMENSION_3D if self._config.get("dimension") == DIMENSION_3D else DIMENSION_2D
+        )
+        self.model = EditableBoundaryModel.from_preset(
+            PRESET_SQUARE, 15, 15
+        )
         self.boundary_3d = preset_boundary_3d(PRESET3D_CUBE)
         self._axes_is_3d = False
         self.result: GridResult | None = None
         self._busy = False
         self._closed = False
         self._worker_messages: queue.Queue[tuple[str, Any]] = queue.Queue()
+        self._compare_results: list[GridResult] | None = None
+        self._last_metrics: dict[str, Any] | None = None
         self._active_drag: Any = None
         self._drag_start = np.zeros(2)
         self._drag_base_model: EditableBoundaryModel | None = None
         self._manual_edit = False
         self._rot_drag: tuple[float, float, float, float] | None = None
         self._zoom_drag: float | None = None
+        self._rotate_after_id: str | None = None
 
         self._configure_style()
         self._build_layout()
         self._connect_plot_events()
+        self._bind_shortcuts()
+        if self._is_3d():
+            self._apply_dimension_mode()
+            self.preset_var.set(
+                self._preset_label(
+                    self._config.get("preset3d", PRESET3D_CUBE)
+                )
+            )
+            self._apply_preset3d_size_limit()
+        self._register_tooltips()
         self._update_method_controls(reset_tolerance=False)
         self._draw()
+
+    def _bind_shortcuts(self) -> None:
+        bindings = (
+            ("<Control-Return>", lambda _e: self.start_calculation()),
+            ("<F5>", lambda _e: self.start_calculation()),
+            ("<Control-s>", lambda _e: self.save_project()),
+            ("<Control-o>", lambda _e: self.open_project()),
+            ("<Control-e>", lambda _e: self.export_csv()),
+            ("<Control-p>", lambda _e: self.export_png()),
+            ("<Control-Key-1>", lambda _e: self._select_method(METHOD_ELASTIC)),
+            ("<Control-Key-2>", lambda _e: self._select_method(METHOD_WINSLOW)),
+            ("<Control-Key-3>", lambda _e: self._select_method(METHOD_ADAPTIVE)),
+        )
+        for pattern, callback in bindings:
+            try:
+                self.root.bind_all(pattern, callback, add="+")
+            except tk.TclError:
+                pass
+
+    def _select_method(self, method_value: str) -> None:
+        if self._busy:
+            return
+        self.method_var.set(self._method_label(method_value))
+        self._update_method_controls(reset_tolerance=True)
+
+    # -------------------------------------------------------------- helpers
+    def _config_payload(self) -> dict[str, Any]:
+        def integer(var: Any, default: int) -> int:
+            try:
+                return int(var.get())
+            except (ValueError, TypeError):
+                return default
+
+        def float_value(var: Any, default: float) -> float:
+            try:
+                return float(var.get())
+            except (ValueError, TypeError):
+                return default
+
+        return {
+            "lang": self.lang_label,
+            "dimension": self.dimension,
+            "method": self._method_value(self.method_var.get()),
+            "preset2d": (
+                self._preset_value(self.preset_var.get())
+                if not self._is_3d()
+                else self._config.get("preset2d", PRESET_SQUARE)
+            ),
+            "preset3d": (
+                self._preset_value(self.preset_var.get())
+                if self._is_3d()
+                else self._config.get("preset3d", PRESET3D_CUBE)
+            ),
+            "drag": self._drag_value(self.drag_mode_var.get()),
+            "n_xi": integer(self.n_xi_var, 15),
+            "n_eta": integer(self.n_eta_var, 15),
+            "n_zeta": integer(self.n_zeta_var, 9),
+            "max_iterations": integer(self.max_iterations_var, 2000),
+            "gradient_tolerance": float_value(self.tolerance_var, 2e-5),
+            "adaptive_mu": float_value(self.mu_var, 0.1),
+            "balance_stiffness": bool(self.balance_var.get()),
+            "geometry": self.root.geometry(),
+        }
+
+    def _persist_config(self) -> None:
+        _store_config(self._config_payload())
+
+    def _register_tooltips(self) -> None:
+        pairs = (
+            (self.n_xi_spin, "tt_nodes_xi"),
+            (self.n_eta_spin, "tt_nodes_eta"),
+            (self.n_zeta_spin, "tt_nodes_zeta"),
+            (self.mu_entry, "tt_mu"),
+            (self.tolerance_entry, "tt_tolerance"),
+            (self.max_iterations_entry, "tt_max_iterations"),
+            (self.balance_check, "tt_balance"),
+            (self.drag_combo, "tt_drag"),
+            (self.preset_combo, "tt_preset"),
+            (self.method_combo, "tt_method"),
+            (self.dimension_combo, "tt_dimension"),
+            (self.build_button, "tt_build"),
+            (self.compare_button, "tt_compare"),
+            (self.auto_rotate_check, "tt_auto_rotate"),
+        )
+        for widget, key in pairs:
+            if widget is not None:
+                self._tooltips.append(Tooltip(widget, lambda k=key: self._tt(k)))
+
+    # ---------------------------------------------------------- auto rotate
+    def _on_auto_rotate_toggled(self) -> None:
+        if self._busy:
+            self.auto_rotate_var.set(False)
+            return
+        if self.auto_rotate_var.get():
+            self._schedule_rotate()
+        else:
+            self._stop_auto_rotate()
+
+    def _schedule_rotate(self) -> None:
+        if not self._is_3d() or not self.auto_rotate_var.get():
+            return
+        if self._axes_is_3d:
+            try:
+                self.ax.view_init(elev=self.ax.elev, azim=self.ax.azim + 2.0)
+                self.canvas.draw_idle()
+            except (AttributeError, TypeError):
+                pass
+        try:
+            self._rotate_after_id = self.root.after(100, self._schedule_rotate)
+        except tk.TclError:
+            self._rotate_after_id = None
+
+    def _stop_auto_rotate(self) -> None:
+        if self._rotate_after_id is not None:
+            try:
+                self.root.after_cancel(self._rotate_after_id)
+            except tk.TclError:
+                pass
+            self._rotate_after_id = None
+
+    # ------------------------------------------------------------ comparison
+    def start_comparison(self) -> None:
+        if self._busy:
+            return
+        try:
+            base = self._settings_from_controls()
+        except (ValueError, TypeError) as exc:
+            messagebox.showerror(self._tt("err_params"), str(exc), parent=self.root)
+            return
+        if not self._is_3d():
+            if base.n_xi != self.model.n_xi or base.n_eta != self.model.n_eta:
+                try:
+                    self.model = self.model.resampled(base.n_xi, base.n_eta)
+                except ValueError as exc:
+                    messagebox.showerror(self._tt("err_build"), str(exc), parent=self.root)
+                    return
+        methods = (METHOD_ELASTIC, METHOD_WINSLOW, METHOD_ADAPTIVE)
+        if self._is_3d():
+            settings_list: list[Any] = [
+                CalculationSettings3D(
+                    method=method,
+                    n_xi=base.n_xi,
+                    n_eta=base.n_eta,
+                    n_zeta=base.n_zeta,
+                    max_iterations=base.max_iterations,
+                    gradient_tolerance=base.gradient_tolerance,
+                    adaptive_mu=base.adaptive_mu,
+                    balance_stiffness=base.balance_stiffness,
+                )
+                for method in methods
+            ]
+        else:
+            settings_list = [
+                CalculationSettings(
+                    method=method,
+                    n_xi=base.n_xi,
+                    n_eta=base.n_eta,
+                    max_iterations=base.max_iterations,
+                    gradient_tolerance=base.gradient_tolerance,
+                    adaptive_mu=base.adaptive_mu,
+                    balance_stiffness=base.balance_stiffness,
+                )
+                for method in methods
+            ]
+        self._set_busy(True)
+        self.status_var.set(self._tt("status_calculation_run"))
+
+        def worker() -> None:
+            try:
+                if self._is_3d():
+                    results = [calculate_grid_3d(self.boundary_3d, s) for s in settings_list]
+                else:
+                    boundary = self.model.to_boundary(self.model.name)
+                    results = [calculate_grid(boundary, s) for s in settings_list]
+            except Exception as exc:  # keep the Tk main loop alive on numerical failure
+                self._worker_messages.put(("error", (str(exc), traceback.format_exc())))
+            else:
+                self._worker_messages.put(("compare", results))
+
+        threading.Thread(target=worker, name="mesh-compare", daemon=True).start()
+        self.root.after(70, self._poll_worker)
+
+    def _show_comparison(self, results: list[GridResult]) -> None:
+        self._compare_results = results
+        metrics_list = [
+            grid_metrics_3d(result) if self._is_3d() else grid_metrics(result)
+            for result in results
+        ]
+        window = tk.Toplevel(self.root)
+        window.title(self._tt("compare_title"))
+        window.configure(bg=COLORS["window"])
+        window.geometry("760x440")
+        window.transient(self.root)
+
+        tree = ttk.Treeview(
+            window,
+            columns=("metric", "m1", "m2", "m3"),
+            show="headings",
+            height=9,
+            selectmode="none",
+        )
+        tree.heading("metric", text=self._tt("metric_name"))
+        method_labels = [self._translate_method_name(r.method) for r in results]
+        for column, label in zip(("m1", "m2", "m3"), method_labels):
+            tree.heading(column, text=label)
+        tree.column("metric", width=190, anchor="w")
+        for column in ("m1", "m2", "m3"):
+            tree.column(column, width=140, anchor="e")
+        tree.grid(row=0, column=0, sticky="nsew", padx=14, pady=(14, 4))
+        scrollbar = ttk.Scrollbar(window, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.grid(row=0, column=1, sticky="ns", pady=(14, 4))
+        window.grid_columnconfigure(0, weight=1)
+        window.grid_rowconfigure(0, weight=1)
+
+        common_rows = [
+            ("iterations", "metric_iterations", "lower"),
+            ("runtime_ms", "metric_time", "lower"),
+            ("orthogonality_score", "metric_qorth", "higher"),
+            ("min_scaled_jacobian", "metric_jsc", "higher"),
+            ("inverted_cells", "metric_inv", "lower"),
+            ("aspect_p95", "metric_ar", "lower"),
+        ]
+        if self._is_3d():
+            common_rows.insert(5, ("volume_cv", "metric_cv_volume", "lower"))
+        else:
+            common_rows.insert(5, ("area_cv", "metric_cv_area", "lower"))
+
+        for key, label_key, direction in common_rows:
+            values = [float(metrics[key]) for metrics in metrics_list]
+            best = (
+                max(range(3), key=lambda i: values[i])
+                if direction == "higher"
+                else min(range(3), key=lambda i: values[i])
+            )
+            cells = []
+            for index, value in enumerate(values):
+                text = str(int(value)) if key == "iterations" else _format_number(value)
+                if index == best:
+                    text += "  ✓"
+                cells.append(text)
+            tree.insert("", "end", values=(self._tt(label_key), *cells))
+        converged = [bool(r.converged) for r in results]
+        first_true = next((i for i, value in enumerate(converged) if value), None)
+        conv_cells = [self._tt("value_yes") if value else self._tt("value_manual") for value in converged]
+        if first_true is not None:
+            conv_cells[first_true] += "  ✓"
+        tree.insert("", "end", values=(self._tt("metric_convergence"), *conv_cells))
+
+        actions = ttk.Frame(window)
+        actions.grid(row=1, column=0, columnspan=2, sticky="ew", padx=14, pady=10)
+        for index, label in enumerate(method_labels):
+            ttk.Button(
+                actions,
+                text=self._tt("compare_apply").format(method=label),
+                command=lambda i=index: self._apply_compare_result(i, window),
+            ).grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else 7, 0))
+        actions.grid_columnconfigure(tuple(range(3)), weight=1)
+        ttk.Button(
+            window,
+            text=self._tt("fit_button") if False else self._tt("close_button") if "close_button" in UI_TEXTS[self.lang_code] else "Close",
+            command=window.destroy,
+        ).grid(row=2, column=0, columnspan=2, sticky="e", padx=14, pady=(0, 12))
+        self.status_var.set(self._tt("compare_title"))
+
+    def _apply_compare_result(self, index: int, window: tk.Toplevel) -> None:
+        if self._compare_results is None or index >= len(self._compare_results):
+            return
+        self.result = self._compare_results[index]
+        self._manual_edit = False
+        self._update_metrics()
+        self._draw()
+        if self.result.converged:
+            self.status_var.set(
+                self._tt("status_ready").format(
+                    iters=self.result.iterations,
+                    ms=f"{1000 * self.result.runtime_s:.1f}",
+                )
+            )
+        else:
+            self.status_var.set(
+                self._tt("status_no_convergence")
+                + (self.result.message or "")
+            )
+        window.destroy()
+
+    # -------------------------------------------------------------- advisor
+    def _advisor(self, metrics: dict[str, Any]) -> tuple[str, str]:
+        if int(metrics["inverted_cells"]) > 0:
+            return self._tt("advice_inverted"), COLORS["danger"]
+        jsc = float(metrics["min_scaled_jacobian"])
+        if jsc < 0.3:
+            return self._tt("advice_jac").format(v=_format_number(jsc)), COLORS["amber"]
+        ar = float(metrics["aspect_p95"])
+        if ar > 6.0:
+            return self._tt("advice_aspect").format(v=_format_number(ar)), COLORS["amber"]
+        cv = float(metrics["area_cv"] if "area_cv" in metrics else metrics["volume_cv"])
+        if cv > 0.35:
+            return self._tt("advice_cv").format(v=_format_number(cv)), COLORS["amber"]
+        q = float(metrics["orthogonality_score"])
+        if q < 0.96:
+            return self._tt("advice_orth").format(v=_format_number(q)), COLORS["amber"]
+        return self._tt("advice_good"), COLORS["green"]
+
+    def _refresh_advisor(self) -> None:
+        if self.result is None or self._last_metrics is None:
+            self.advisor_label.configure(text="", foreground=COLORS["muted"])
+            return
+        text, color = self._advisor(self._last_metrics)
+        self.advisor_label.configure(text=text, foreground=color)
 
     # ------------------------------------------------------------------ UI
     def _tt(self, key: str) -> str:
@@ -519,6 +1020,7 @@ class MeshDesignerApp:
         self.lang_code = new_code
         self.lang_label = "EN" if new_code == LANG_EN else "RU"
         self._apply_language(method_value, preset_value, drag_value)
+        self._persist_config()
 
     def _apply_language(self, method_value: str, preset_value: str, drag_value: str) -> None:
         for widget, key in self._label_widgets:
@@ -542,6 +1044,7 @@ class MeshDesignerApp:
             self._update_metrics()
         self._update_method_controls(reset_tolerance=False)
         self._draw()
+        self._refresh_advisor()
         self.status_var.set(self._tt("status_lang_switched"))
 
     def _configure_style(self) -> None:
@@ -918,6 +1421,13 @@ class MeshDesignerApp:
         )
         self.build_button.grid(row=row, column=0, sticky="ew", pady=(14, 0))
         row += 1
+        self.compare_button = self._button(
+            controls,
+            "compare_button",
+            self.start_comparison,
+        )
+        self.compare_button.grid(row=row, column=0, sticky="ew", pady=(7, 0))
+        row += 1
         reset_frame = ttk.Frame(controls)
         reset_frame.grid(row=row, column=0, sticky="ew", pady=(7, 0))
         reset_frame.grid_columnconfigure((0, 1), weight=1)
@@ -953,6 +1463,13 @@ class MeshDesignerApp:
         self._button(
             self.view3d_frame, "rotate_right", lambda: self._rotate_view(20.0)
         ).grid(row=2, column=2, columnspan=2, sticky="ew", pady=(7, 0))
+        self.auto_rotate_check = self._checkbutton(
+            self.view3d_frame, "auto_rotate", self.auto_rotate_var,
+            command=self._on_auto_rotate_toggled,
+        )
+        self.auto_rotate_check.grid(
+            row=3, column=0, columnspan=4, sticky="w", pady=(7, 0)
+        )
         self.view3d_frame.grid_remove()
         row += 1
 
@@ -992,6 +1509,14 @@ class MeshDesignerApp:
             background=COLORS["window"],
         )
         self.view_hint_label.grid(row=0, column=1, sticky="e")
+        self.advisor_label = ttk.Label(
+            top,
+            text="",
+            foreground=COLORS["muted"],
+            background=COLORS["window"],
+            font=("Segoe UI", 9),
+        )
+        self.advisor_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
 
         plot_frame = ttk.Frame(main, style="Main.TFrame")
         plot_frame.grid(row=1, column=0, sticky="nsew", padx=20)
@@ -1082,6 +1607,10 @@ class MeshDesignerApp:
             return
         self.dimension = requested
         self._apply_dimension_mode()
+        if not self._is_3d():
+            self.auto_rotate_var.set(False)
+            self._stop_auto_rotate()
+        self._persist_config()
         self.result = None
         self._manual_edit = False
         self._clear_metrics()
@@ -1311,6 +1840,7 @@ class MeshDesignerApp:
                 return
             self.boundary_3d = preset_boundary_3d(key)
             self._apply_preset3d_size_limit()
+            self._persist_config()
             self.result = None
             self._manual_edit = False
             self._clear_metrics()
@@ -1328,6 +1858,7 @@ class MeshDesignerApp:
         except (ValueError, TypeError) as exc:
             messagebox.showerror(self._tt("err_geometry"), str(exc), parent=self.root)
             return
+        self._persist_config()
         self.result = None
         self._manual_edit = False
         self._clear_metrics()
@@ -1751,6 +2282,9 @@ class MeshDesignerApp:
         if self._is_3d():
             if event.inaxes is not self.ax:
                 return
+            if self.auto_rotate_var.get():
+                self.auto_rotate_var.set(False)
+                self._stop_auto_rotate()
             if event.button == 1:
                 self._rot_drag = (event.x, event.y, float(self.ax.elev), float(self.ax.azim))
             elif event.button == 3:
@@ -1916,10 +2450,14 @@ class MeshDesignerApp:
             )
             print(details)
             return
+        if kind == "compare":
+            self._show_comparison(payload)
+            return
         self.result = payload
         self._manual_edit = False
         self._update_metrics()
         self._draw()
+        self._persist_config()
         if self.result.converged:
             self.status_var.set(
                 self._tt("status_ready").format(
@@ -1936,6 +2474,10 @@ class MeshDesignerApp:
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
         self.build_button.configure(state="disabled" if busy else "normal")
+        self.compare_button.configure(state="disabled" if busy else "normal")
+        self.auto_rotate_check.configure(
+            state="disabled" if busy or not self._is_3d() else "normal"
+        )
         self.resize_button.configure(
             state="disabled" if busy or self._is_3d() else "normal"
         )
@@ -1979,6 +2521,8 @@ class MeshDesignerApp:
     def _clear_metrics(self) -> None:
         for item in self.metrics_tree.get_children():
             self.metrics_tree.delete(item)
+        self._last_metrics = None
+        self._refresh_advisor()
 
     def _update_metrics(self) -> None:
         self._clear_metrics()
@@ -1994,6 +2538,8 @@ class MeshDesignerApp:
                 self._tt("status_metrics_error").format(error=exc)
             )
             return
+        self._last_metrics = metrics
+        self._refresh_advisor()
         if self._is_3d():
             conv_value = self._tt("value_yes") if self.result.converged else self._tt("value_manual")
             values = (
@@ -2162,6 +2708,8 @@ class MeshDesignerApp:
         self.status_var.set(self._tt("status_image_saved").format(path=filename))
 
     def close(self) -> None:
+        self._stop_auto_rotate()
+        self._persist_config()
         self._closed = True
         self.root.destroy()
 
