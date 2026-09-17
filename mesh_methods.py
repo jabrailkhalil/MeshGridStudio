@@ -478,6 +478,19 @@ def _feasible_lbfgs(
     x = np.asarray(initial, dtype=float).copy()
     value, gradient = fun(x)
     history = [float(value)]
+    if not np.isfinite(value) or value >= 1e90:
+        # The initial point lies outside the admissible set, where the
+        # barrier returns zero gradient.  Convergence must not be claimed
+        # for such a point.
+        return (
+            x,
+            False,
+            0,
+            float(value),
+            float(np.linalg.norm(gradient, ord=np.inf)),
+            "Initial point is outside the feasible set",
+            history,
+        )
     corrections: list[tuple[np.ndarray, np.ndarray, float]] = []
     message = "Maximum iteration count reached"
     converged = False
