@@ -606,6 +606,7 @@ class MeshDesignerApp:
         self._rot_drag: tuple[float, float, float, float] | None = None
         self._zoom_drag: float | None = None
         self._rotate_after_id: str | None = None
+        self._sidebar_wheel = 0.0
 
         self._configure_style()
         self._build_layout()
@@ -620,6 +621,15 @@ class MeshDesignerApp:
             )
             self._apply_preset3d_size_limit()
         self._register_tooltips()
+        for widget in (
+            self.n_xi_spin,
+            self.n_eta_spin,
+            self.n_zeta_spin,
+            self.max_iterations_entry,
+            self.tolerance_entry,
+            self.mu_entry,
+        ):
+            widget.bind("<Return>", lambda _e: self.start_calculation(), add="+")
         self._update_method_controls(reset_tolerance=False)
         self._draw()
 
@@ -1177,6 +1187,36 @@ class MeshDesignerApp:
             background=COLORS["accent"],
             bordercolor=COLORS["panel_alt"],
         )
+        style.configure(
+            "Vertical.TScrollbar",
+            background=COLORS["panel_alt"],
+            troughcolor=COLORS["window"],
+            bordercolor=COLORS["window"],
+            arrowcolor=COLORS["muted"],
+            lightcolor=COLORS["panel_alt"],
+            darkcolor=COLORS["panel_alt"],
+            width=15,
+        )
+        style.map(
+            "Vertical.TScrollbar",
+            background=[("active", "#2a4a6b")],
+            arrowcolor=[("active", COLORS["text"])],
+        )
+        style.configure(
+            "TSpinbox",
+            fieldbackground=COLORS["panel_alt"],
+            foreground=COLORS["text"],
+            arrowcolor=COLORS["muted"],
+            bordercolor=COLORS["panel_alt"],
+            lightcolor=COLORS["panel_alt"],
+            darkcolor=COLORS["panel_alt"],
+            padding=4,
+        )
+        style.map(
+            "TSpinbox",
+            fieldbackground=[("readonly", COLORS["panel_alt"]), ("disabled", COLORS["panel_alt"])],
+            arrowcolor=[("active", COLORS["accent"]), ("disabled", COLORS["muted"])],
+        )
 
     def _build_layout(self) -> None:
         self.root.grid_columnconfigure(1, weight=1)
@@ -1207,6 +1247,7 @@ class MeshDesignerApp:
             background=COLORS["panel"],
             highlightthickness=0,
             borderwidth=0,
+            yscrollincrement=24,
         )
         control_scrollbar = ttk.Scrollbar(
             sidebar, orient="vertical", command=control_canvas.yview
@@ -1231,8 +1272,15 @@ class MeshDesignerApp:
             top = control_canvas.winfo_rooty()
             right = left + control_canvas.winfo_width()
             bottom = top + control_canvas.winfo_height()
-            if left <= event.x_root <= right and top <= event.y_root <= bottom:
-                control_canvas.yview_scroll(int(-event.delta / 120), "units")
+            if not (left <= event.x_root <= right and top <= event.y_root <= bottom):
+                return
+            # Fractional accumulation keeps smooth-scroll mice (small deltas)
+            # from being truncated to zero ticks.
+            self._sidebar_wheel += event.delta / 120.0
+            units = int(self._sidebar_wheel)
+            if units:
+                self._sidebar_wheel -= units
+                control_canvas.yview_scroll(-units, "units")
 
         controls.bind("<Configure>", update_scroll_region)
         control_canvas.bind("<Configure>", fit_control_width)
@@ -1240,22 +1288,6 @@ class MeshDesignerApp:
         controls.grid_columnconfigure(0, weight=1)
 
         row = 0
-        language_frame = ttk.Frame(controls)
-        language_frame.grid(row=row, column=0, sticky="ew", pady=(0, 10))
-        language_frame.grid_columnconfigure(0, weight=1)
-        self._label(language_frame, "lang_label", style="Muted.TLabel").grid(
-            row=0, column=0, sticky="w"
-        )
-        self.lang_combo = ttk.Combobox(
-            language_frame,
-            textvariable=self.lang_var,
-            values=("EN", "RU"),
-            state="readonly",
-            width=6,
-        )
-        self.lang_combo.grid(row=0, column=1, sticky="e")
-        self.lang_combo.bind("<<ComboboxSelected>>", self._on_language_selected)
-        row += 1
         dimension_frame = ttk.Frame(controls)
         dimension_frame.grid(row=row, column=0, sticky="ew", pady=(0, 10))
         dimension_frame.grid_columnconfigure(0, weight=1)
@@ -1509,6 +1541,15 @@ class MeshDesignerApp:
             background=COLORS["window"],
         )
         self.view_hint_label.grid(row=0, column=1, sticky="e")
+        self.lang_combo = ttk.Combobox(
+            top,
+            textvariable=self.lang_var,
+            values=("EN", "RU"),
+            state="readonly",
+            width=5,
+        )
+        self.lang_combo.grid(row=0, column=2, sticky="e", padx=(10, 0))
+        self.lang_combo.bind("<<ComboboxSelected>>", self._on_language_selected)
         self.advisor_label = ttk.Label(
             top,
             text="",
@@ -1556,6 +1597,13 @@ class MeshDesignerApp:
         )
         self.metrics_tree.configure(yscrollcommand=metrics_scrollbar.set)
         metrics_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.metrics_tree.bind(
+            "<MouseWheel>",
+            lambda event: self.metrics_tree.yview_scroll(
+                int(-event.delta / 120), "units"
+            ),
+            add="+",
+        )
 
         status_frame = ttk.Frame(main, style="Main.TFrame")
         status_frame.grid(row=3, column=0, sticky="ew", padx=22, pady=(0, 12))
