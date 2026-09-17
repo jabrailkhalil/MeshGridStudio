@@ -1664,7 +1664,9 @@ class MeshDesignerApp:
                 points[:, 0], points[:, 1], points[:, 2], projection
             )
             depths.append(float(np.median(zs)))
-        order = np.argsort(depths)
+        # Smaller projected z means CLOSER to the camera; draw far lines
+        # first with low alpha so near threads stay crisp on top.
+        order = np.argsort(depths)[::-1]
         count = len(order)
         for position, index in enumerate(order):
             points, color = lines[index]
