@@ -273,6 +273,12 @@ output/app/MeshGridStudio/MeshGridStudio.exe --solver-self-test
 output/app/MeshGridStudio/MeshGridStudio.exe --smoke-test
 ```
 
+Установщик Windows (Inno Setup) собирается скриптом
+`build_installer.ps1` из каталожной сборки и появляется в
+`output/installer/MeshGridStudio-<версия>-Setup.exe`. В релизах GitHub
+также публикуется однофайловый портативный EXE
+(`MeshGridStudio-<версия>-win64.exe`).
+
 ## Структура проекта
 
 ```text
