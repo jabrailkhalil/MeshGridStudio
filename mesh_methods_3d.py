@@ -1117,7 +1117,7 @@ def _format_float(value: float) -> str:
 
 def write_latex_table_3d(rows: list[dict[str, object]], path: Path) -> None:
     lines = [
-        r"\begin{tabular}{llrrrrrr}",
+        r"\begin{tabular}{llrrrrrrr}",
         r"\toprule",
         r"Область & Метод & $Q_{\rm orth}$ & $\sigma_{\rm len}$ & "
         r"$J_{\min}^{\rm sc}$ & $N_{\rm inv}$ & $CV_V$ & $AR_{95}$ & "
