@@ -544,7 +544,9 @@ class MeshDesignerApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self._config = _load_config()
-        self.lang_code = LANG_EN if self._config.get("lang", "EN") == "EN" else LANG_RU
+        self.lang_code = (
+            LANG_RU if str(self._config.get("lang", LANG_EN)) == "RU" else LANG_EN
+        )
         self.lang_label = "EN" if self.lang_code == LANG_EN else "RU"
         self._label_widgets: list[tuple[Any, str]] = []
         self._tooltips: list[Tooltip] = []
@@ -572,13 +574,28 @@ class MeshDesignerApp:
             value=self._drag_label(self._config.get("drag", DRAG_CORNERS))
         )
         self.dimension_var = tk.StringVar(value=self.dimension)
-        self.n_xi_var = tk.StringVar(value=str(self._config.get("n_xi", "15")))
-        self.n_eta_var = tk.StringVar(value=str(self._config.get("n_eta", "15")))
-        self.n_zeta_var = tk.StringVar(value=str(self._config.get("n_zeta", "9")))
-        self.max_iterations_var = tk.StringVar(value=str(self._config.get("max_iterations", 2000)))
-        self.tolerance_var = tk.StringVar(value=f"{self._config.get('gradient_tolerance', 2e-5):g}")
-        self.mu_var = tk.StringVar(value=f"{self._config.get('adaptive_mu', 0.1):g}")
-        self.balance_var = tk.BooleanVar(value=bool(self._config.get("balance_stiffness", True)))
+        self.n_xi_var = tk.StringVar(
+            value=str(max(5, min(81, self._cfg_int("n_xi", 15))))
+        )
+        self.n_eta_var = tk.StringVar(
+            value=str(max(5, min(81, self._cfg_int("n_eta", 15))))
+        )
+        self.n_zeta_var = tk.StringVar(
+            value=str(max(5, min(21, self._cfg_int("n_zeta", 9))))
+        )
+        clamped_iterations = max(1, min(100_000, self._cfg_int("max_iterations", 2000)))
+        self.max_iterations_var = tk.StringVar(value=str(clamped_iterations))
+        tolerance = self._cfg_float("gradient_tolerance", 2e-5)
+        if not np.isfinite(tolerance) or tolerance <= 0:
+            tolerance = 2e-5
+        self.tolerance_var = tk.StringVar(value=f"{tolerance:g}")
+        adaptive_mu = self._cfg_float("adaptive_mu", 0.1)
+        if not np.isfinite(adaptive_mu) or adaptive_mu < 0:
+            adaptive_mu = 0.1
+        self.mu_var = tk.StringVar(value=f"{adaptive_mu:g}")
+        self.balance_var = tk.BooleanVar(
+            value=self._cfg_bool("balance_stiffness", True)
+        )
         self.auto_rebuild_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value=self._tt("status_initial"))
         self.method_hint_var = tk.StringVar()
@@ -1000,10 +1017,38 @@ class MeshDesignerApp:
         return CUSTOM_PRESET_CODE
 
     def _preset_label(self, value: str) -> str:
+        if value == CUSTOM_PRESET_CODE:
+            return self._tt("preset_custom")
         for code, constant in {**PRESET2D_VALUE, **PRESET3D_VALUE}.items():
             if constant == value:
                 return self._tt(f"preset_{code}")
-        return self._tt("preset_custom")
+        return self._tt("preset_cube3d" if self._is_3d() else "preset_square")
+
+    def _cfg_int(self, key: str, default: int) -> int:
+        try:
+            return int(self._config.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    def _cfg_float(self, key: str, default: float) -> float:
+        try:
+            return float(self._config.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    def _cfg_bool(self, key: str, default: bool) -> bool:
+        value = self._config.get(key, default)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            return value != 0
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in ("1", "true", "yes", "on"):
+                return True
+            if normalized in ("0", "false", "no", "off"):
+                return False
+        return default
 
     def _translate_method_name(self, name: str) -> str:
         if self.lang_code == LANG_RU:
