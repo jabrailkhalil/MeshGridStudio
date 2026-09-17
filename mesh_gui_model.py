@@ -25,6 +25,16 @@ from mesh_methods import (
     square_boundary,
     validate_boundary,
 )
+from mesh_methods_3d import (
+    Boundary3D,
+    arch_prism_boundary_3d,
+    ball_boundary_3d,
+    cube_boundary_3d,
+    generate_adaptive_tension_3d,
+    generate_harmonic_3d,
+    generate_winslow_3d,
+    twisted_cube_boundary_3d,
+)
 
 
 METHOD_ELASTIC = "elastic"
@@ -36,6 +46,16 @@ PRESET_SQUARE = "square"
 PRESET_CIRCLE = "circle"
 PRESET_ARCH = "arch"
 PRESET_KEYS = (PRESET_SQUARE, PRESET_CIRCLE, PRESET_ARCH)
+
+PRESET3D_CUBE = "cube3d"
+PRESET3D_TWISTED = "twisted3d"
+PRESET3D_BALL = "ball3d"
+PRESET3D_PRISM = "prism3d"
+PRESET3D_KEYS = (PRESET3D_CUBE, PRESET3D_TWISTED, PRESET3D_BALL, PRESET3D_PRISM)
+
+# The gnomonic six-patch ball loses positive corner Jacobians above 9 nodes
+# per direction; the interactive editor caps this preset accordingly.
+BALL3D_MAX_N = 9
 
 
 @dataclass(frozen=True)
@@ -63,6 +83,39 @@ class CalculationSettings:
             raise ValueError("Параметр μ не может быть отрицательным")
 
 
+@dataclass(frozen=True)
+class CalculationSettings3D:
+    """Validated numerical settings for the 3D solvers."""
+
+    method: str = METHOD_ELASTIC
+    n_xi: int = 9
+    n_eta: int = 9
+    n_zeta: int = 9
+    max_iterations: int = 2_000
+    gradient_tolerance: float = 2e-5
+    adaptive_mu: float = 0.1
+    balance_stiffness: bool = True
+
+    def validate(self) -> None:
+        if self.method not in METHOD_KEYS:
+            raise ValueError(f"Unknown grid method: {self.method!r}")
+        for name, value in (
+            ("n_xi", self.n_xi),
+            ("n_eta", self.n_eta),
+            ("n_zeta", self.n_zeta),
+        ):
+            if not 5 <= value <= 21:
+                raise ValueError(
+                    f"Число узлов {name} должно лежать в диапазоне от 5 до 21"
+                )
+        if not 1 <= self.max_iterations <= 100_000:
+            raise ValueError("Число итераций должно лежать в диапазоне от 1 до 100000")
+        if not np.isfinite(self.gradient_tolerance) or self.gradient_tolerance <= 0:
+            raise ValueError("Допуск градиента должен быть положительным")
+        if not np.isfinite(self.adaptive_mu) or self.adaptive_mu < 0:
+            raise ValueError("Параметр μ не может быть отрицательным")
+
+
 def preset_boundary(key: str) -> Boundary:
     """Return one of the three domains used in the article."""
 
@@ -73,6 +126,20 @@ def preset_boundary(key: str) -> Boundary:
     if key == PRESET_ARCH:
         return arch_boundary()
     raise ValueError(f"Unknown boundary preset: {key!r}")
+
+
+def preset_boundary_3d(key: str) -> Boundary3D:
+    """Return one of the four hexahedral 3D domains."""
+
+    if key == PRESET3D_CUBE:
+        return cube_boundary_3d()
+    if key == PRESET3D_TWISTED:
+        return twisted_cube_boundary_3d()
+    if key == PRESET3D_BALL:
+        return ball_boundary_3d()
+    if key == PRESET3D_PRISM:
+        return arch_prism_boundary_3d()
+    raise ValueError(f"Unknown 3D boundary preset: {key!r}")
 
 
 def _polyline_curve(points: np.ndarray):
@@ -293,6 +360,38 @@ def calculate_grid(boundary: Boundary, settings: CalculationSettings) -> GridRes
         boundary,
         settings.n_xi,
         settings.n_eta,
+        max_iterations=settings.max_iterations,
+        gradient_tolerance=settings.gradient_tolerance,
+        orientation_barrier=settings.adaptive_mu,
+    )
+
+
+def calculate_grid_3d(boundary: Boundary3D, settings: CalculationSettings3D) -> GridResult:
+    """Dispatch to the selected 3D solver."""
+
+    settings.validate()
+    if settings.method == METHOD_ELASTIC:
+        return generate_harmonic_3d(
+            boundary,
+            settings.n_xi,
+            settings.n_eta,
+            settings.n_zeta,
+            balance_stiffness=settings.balance_stiffness,
+        )
+    if settings.method == METHOD_WINSLOW:
+        return generate_winslow_3d(
+            boundary,
+            settings.n_xi,
+            settings.n_eta,
+            settings.n_zeta,
+            max_iterations=settings.max_iterations,
+            gradient_tolerance=settings.gradient_tolerance,
+        )
+    return generate_adaptive_tension_3d(
+        boundary,
+        settings.n_xi,
+        settings.n_eta,
+        settings.n_zeta,
         max_iterations=settings.max_iterations,
         gradient_tolerance=settings.gradient_tolerance,
         orientation_barrier=settings.adaptive_mu,

@@ -10,14 +10,23 @@ from mesh_gui_model import (
     METHOD_ADAPTIVE,
     METHOD_ELASTIC,
     METHOD_WINSLOW,
+    PRESET3D_BALL,
+    PRESET3D_CUBE,
+    PRESET3D_PRISM,
+    PRESET3D_TWISTED,
     PRESET_ARCH,
     PRESET_CIRCLE,
     PRESET_SQUARE,
+    BALL3D_MAX_N,
     CalculationSettings,
+    CalculationSettings3D,
     EditableBoundaryModel,
     calculate_grid,
+    calculate_grid_3d,
+    preset_boundary_3d,
 )
 from mesh_methods import grid_metrics, sample_boundary
+from mesh_methods_3d import grid_metrics_3d
 
 
 class EditableBoundaryTests(unittest.TestCase):
@@ -133,6 +142,44 @@ class GuiSolverDispatchTests(unittest.TestCase):
         )
         self.assertTrue(result.converged, result.message)
         self.assertGreater(grid_metrics(result)["min_scaled_jacobian"], 0.0)
+
+    def test_settings_3d_reject_invalid_user_values(self) -> None:
+        invalid = (
+            CalculationSettings3D(method="not-a-method"),
+            CalculationSettings3D(n_zeta=3),
+            CalculationSettings3D(n_xi=40),
+            CalculationSettings3D(max_iterations=0),
+            CalculationSettings3D(gradient_tolerance=0.0),
+            CalculationSettings3D(adaptive_mu=-0.1),
+        )
+        for settings in invalid:
+            with self.subTest(settings=settings), self.assertRaises(ValueError):
+                settings.validate()
+
+    def test_each_ui_method_dispatches_to_a_distinct_3d_solver(self) -> None:
+        boundary = preset_boundary_3d(PRESET3D_CUBE)
+        results = {}
+        for method in (METHOD_ELASTIC, METHOD_WINSLOW, METHOD_ADAPTIVE):
+            settings = CalculationSettings3D(
+                method=method,
+                n_xi=6,
+                n_eta=6,
+                n_zeta=6,
+                max_iterations=50,
+            )
+            result = calculate_grid_3d(boundary, settings)
+            self.assertTrue(result.converged, result.message)
+            self.assertEqual(result.grid.shape, (6, 6, 6, 3))
+            self.assertEqual(grid_metrics_3d(result)["inverted_cells"], 0)
+            results[method] = result.method
+        self.assertEqual(len(set(results.values())), 3)
+
+    def test_ball_3d_preset_respects_resolution_limit(self) -> None:
+        for key in (PRESET3D_CUBE, PRESET3D_TWISTED, PRESET3D_BALL, PRESET3D_PRISM):
+            with self.subTest(key=key):
+                boundary = preset_boundary_3d(key)
+                boundary.validate()
+        self.assertEqual(BALL3D_MAX_N, 9)
 
 
 if __name__ == "__main__":
