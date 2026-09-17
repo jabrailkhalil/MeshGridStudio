@@ -58,20 +58,6 @@ METHOD_LABELS = {
     "Метод Винслоу": METHOD_WINSLOW,
     "Адаптивное натяжение": METHOD_ADAPTIVE,
 }
-METHOD_NAMES = {value: key for key, value in METHOD_LABELS.items()}
-
-PRESET_LABELS = {
-    "Квадрат": PRESET_SQUARE,
-    "Круг": PRESET_CIRCLE,
-    "Полукольцо": PRESET_ARCH,
-}
-PRESET3D_LABELS = {
-    "Куб": PRESET3D_CUBE,
-    "Скрученный куб": PRESET3D_TWISTED,
-    "Шар": PRESET3D_BALL,
-    "Арковая призма": PRESET3D_PRISM,
-}
-CUSTOM_PRESET = "Пользовательская"
 
 DIMENSION_2D = "2D"
 DIMENSION_3D = "3D"
