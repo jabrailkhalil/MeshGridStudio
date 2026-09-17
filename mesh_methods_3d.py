@@ -81,6 +81,8 @@ class Face3D:
             + (1.0 - fu)[..., None] * fv[..., None] * points[i0, j0 + 1]
             + fu[..., None] * fv[..., None] * points[i0 + 1, j0 + 1]
         )
+        if u_b.ndim == 0 and v_b.ndim == 0:
+            return value.reshape(-1)
         return value
 
 

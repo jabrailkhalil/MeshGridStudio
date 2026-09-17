@@ -81,6 +81,12 @@ class Boundary3DTests(unittest.TestCase):
             grid = meshes.coons_patch_3d(meshes.ball_boundary_3d(), n, n, n)
             self.assertGreater(meshes.min_signed_jacobian_3d(grid), 0.0)
 
+    def test_face_scalar_evaluation_returns_a_point(self) -> None:
+        boundary = meshes.ball_boundary_3d()
+        for face in boundary.faces:
+            self.assertEqual(face(0.25, 0.75).shape, (3,))
+        self.assertEqual(boundary.corners.shape, (8, 3))
+
 
 class Algorithm3DTests(unittest.TestCase):
     def test_affine_cube_is_fixed_point_for_all_methods(self) -> None:
