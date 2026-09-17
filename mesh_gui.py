@@ -422,7 +422,6 @@ class MeshDesignerApp:
         self._active_drag: Any = None
         self._drag_start = np.zeros(2)
         self._drag_base_model: EditableBoundaryModel | None = None
-        self._drag_base_grid: np.ndarray | None = None
         self._manual_edit = False
         self._rot_drag: tuple[float, float, float, float] | None = None
         self._zoom_drag: float | None = None
@@ -1776,7 +1775,6 @@ class MeshDesignerApp:
         self._drag_start = np.array([event.xdata, event.ydata], dtype=float)
         mode = self._drag_value(self.drag_mode_var.get())
         if mode == DRAG_INTERIOR and self.result is not None:
-            self._drag_base_grid = self.result.grid.copy()
             self.result = replace(
                 self.result,
                 grid=self.result.grid.copy(),
@@ -1845,7 +1843,6 @@ class MeshDesignerApp:
         mode = self._drag_value(self.drag_mode_var.get())
         self._active_drag = None
         self._drag_base_model = None
-        self._drag_base_grid = None
 
         if mode == DRAG_INTERIOR and self.result is not None:
             self._update_metrics()
