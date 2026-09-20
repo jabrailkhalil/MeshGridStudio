@@ -48,7 +48,7 @@ try {
         $entryPoint
 
     if ($LASTEXITCODE -ne 0) {
-        throw "PyInstaller завершился с кодом $LASTEXITCODE"
+        throw "PyInstaller exited with code $LASTEXITCODE"
     }
 }
 finally {
@@ -57,7 +57,7 @@ finally {
 
 $executable = Join-Path $outputDirectory "MeshGridStudio\MeshGridStudio.exe"
 if (-not (Test-Path -LiteralPath $executable)) {
-    throw "Сборка завершилась без ожидаемого файла $executable"
+    throw "Build finished without the expected file $executable"
 }
 
 Get-Item -LiteralPath $executable |

@@ -272,6 +272,21 @@ class AlgorithmTests(unittest.TestCase):
         self.assertFalse(stopped.converged)
         self.assertEqual(stopped.message, "Maximum iteration count reached")
 
+    def test_lbfgs_does_not_claim_convergence_outside_the_feasible_set(self) -> None:
+        def barrier(x: np.ndarray) -> tuple[float, np.ndarray]:
+            if np.any(x < 0.5):
+                return 1e100, np.zeros_like(x)
+            return float(np.sum((x - 1.0) ** 2)), 2.0 * (x - 1.0)
+
+        result = meshes._feasible_lbfgs(
+            barrier,
+            np.array([0.0, 0.0]),
+            max_iterations=50,
+            gradient_tolerance=1e-10,
+        )
+        self.assertFalse(result[1])
+        self.assertEqual(result[5], "Initial point is outside the feasible set")
+
     def test_methods_are_invariant_under_uniform_scaling(self) -> None:
         for generator in (
             meshes.generate_harmonic,
@@ -337,8 +352,8 @@ class AlgorithmTests(unittest.TestCase):
         )
         self.assertFalse(converged)
         self.assertEqual(iterations, 0)
-        self.assertTrue(np.isinf(residual))
-        self.assertEqual(message, "Initial point is infeasible")
+        self.assertEqual(residual, 0.0)
+        self.assertEqual(message, "Initial point is outside the feasible set")
 
 
 class GradientTests(unittest.TestCase):

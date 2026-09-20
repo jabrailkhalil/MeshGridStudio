@@ -512,6 +512,19 @@ def _feasible_lbfgs(
     value, gradient = fun(x)
     gradient = np.asarray(gradient, dtype=float)
     history = [float(value)]
+    if not np.isfinite(value) or value >= 1e90:
+        # The initial point lies outside the admissible set, where the
+        # barrier returns zero gradient.  Convergence must not be claimed
+        # for such a point.
+        return (
+            x,
+            False,
+            0,
+            float(value),
+            float(np.linalg.norm(gradient, ord=np.inf)),
+            "Initial point is outside the feasible set",
+            history,
+        )
     corrections: list[tuple[np.ndarray, np.ndarray, float]] = []
     message = "Maximum iteration count reached"
     converged = False
@@ -726,6 +739,8 @@ def generate_winslow(
 
     initial = _pack_interior(centered_template) / length_scale
     initial_value, _ = fun(initial)
+    if not np.isfinite(initial_value) or initial_value >= 1e90:
+        raise ValueError("Initial grid violates the positive-Jacobian barrier")
     (
         optimum,
         optimizer_converged,
@@ -922,6 +937,8 @@ def generate_adaptive_tension(
 
     initial = _pack_interior(centered_template) / length_scale
     initial_value, initial_gradient = fun(initial)
+    if not np.isfinite(initial_value) or initial_value >= 1e90:
+        raise ValueError("Initial grid violates the positive-Jacobian barrier")
     (
         optimum,
         optimizer_converged,

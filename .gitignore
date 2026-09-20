@@ -8,6 +8,8 @@ dist/
 *.spec
 
 output/app/
+output/app-onefile/
+output/installer/
 output/pdf/*.aux
 output/pdf/*.log
 output/pdf/*.out
