@@ -65,7 +65,7 @@ class CalculationSettings:
     method: str = METHOD_ELASTIC
     n_xi: int = 15
     n_eta: int = 15
-    max_iterations: int = 2_000
+    max_iterations: int = 5_000
     gradient_tolerance: float = 2e-5
     adaptive_mu: float = 0.1
     balance_stiffness: bool = True

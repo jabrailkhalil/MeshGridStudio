@@ -11,11 +11,13 @@
 
 Проект объединяет вычислительное ядро, редактор границы (2D) и режим
 трёхмерных областей (3D), автоматические тесты и научную статью. В
-`article.tex` перенесена теоретическая часть
-исходной работы, а прежние программные листинги заменены реализациями,
-которые действительно соответствуют приведённым дискретным постановкам.
-Исходная работа сохранена в `main.tex`, материалы В. Ф. Тишкина — в
-`tishkin_grid.tex` и отдельной позиции списка литературы.
+`article.tex` перенесена теоретическая часть исходной работы, а прежние
+программные листинги заменены верифицированными реализациями явно
+приведённых дискретных задач. Исходная работа сохранена в `main.tex`,
+материалы В. Ф. Тишкина — в `tishkin_grid.tex` и отдельной позиции списка
+литературы.
+
+Авторы статьи — Джабраиль Эльнурович Халилов и Марина Викторовна Яшина.
 
 ## Основной результат
 
@@ -246,9 +248,10 @@ python mesh_gui.py
 
 ```powershell
 python -m unittest -v test_mesh_methods.py test_mesh_methods_3d.py test_mesh_gui.py
-python mesh_methods.py --output-dir output/generated
-python mesh_methods.py --adaptive-mu0-control --output-dir output/generated
-python mesh_methods_3d.py --output-dir output/generated
+python mesh_methods.py --output-dir output/reproduced
+python mesh_methods.py --adaptive-mu0-control --output-dir output/reproduced
+python mesh_methods_3d.py --output-dir output/reproduced
+python verify_generated.py output/generated output/reproduced
 pdflatex -interaction=nonstopmode -halt-on-error -output-directory=output/pdf article.tex
 pdflatex -interaction=nonstopmode -halt-on-error -output-directory=output/pdf article.tex
 ```
@@ -291,6 +294,9 @@ test_mesh_methods_3d.py 15 тестов 3D-методов
 test_mesh_gui.py        13 тестов интерфейсной модели и диспетчеризации
 article.tex             научная статья (2D и 3D)
 main.tex                архивный исходный текст работы
+build_supplement.ps1    воспроизводимая упаковка материалов статьи
+package_supplement.py   кроссплатформенная запись ZIP с путями через `/`
+verify_generated.py     проверка повторно вычисленных научных показателей
 tishkin_grid.tex        материалы В. Ф. Тишкина
 output/generated/       2D- и 3D-результаты, рисунки и таблицы
 output/pdf/article.pdf  собранная статья

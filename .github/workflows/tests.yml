@@ -1,0 +1,79 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  numerical-and-gui-model:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install pinned dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run the complete test suite
+        run: python -m unittest -v test_mesh_methods.py test_mesh_gui.py
+
+  article-pdf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install LaTeX with Cyrillic scalable fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base texlive-latex-recommended \
+            texlive-latex-extra texlive-lang-cyrillic cm-super poppler-utils
+      - name: Compile the article twice
+        run: |
+          mkdir -p output/pdf
+          pdflatex -interaction=nonstopmode -halt-on-error \
+            -output-directory=output/pdf article.tex
+          pdflatex -interaction=nonstopmode -halt-on-error \
+            -output-directory=output/pdf article.tex
+      - name: Reject LaTeX warnings and Type 3 fonts
+        run: |
+          if grep -E "LaTeX Warning|Overfull|Underfull|undefined references|multiply defined" output/pdf/article.log; then
+            exit 1
+          fi
+          if pdffonts output/pdf/article.pdf | grep -q "Type 3"; then
+            exit 1
+          fi
+
+  reproduced-results:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install pinned dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Recompute the main and mu=0 control experiments
+        run: |
+          python mesh_methods.py --output-dir ci-generated
+          python mesh_methods.py --adaptive-mu0-control --output-dir ci-generated
+      - name: Compare scientific fields with the publication dataset
+        run: python verify_generated.py output/generated ci-generated

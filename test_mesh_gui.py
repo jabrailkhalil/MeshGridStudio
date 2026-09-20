@@ -93,6 +93,9 @@ class EditableBoundaryTests(unittest.TestCase):
 
 
 class GuiSolverDispatchTests(unittest.TestCase):
+    def test_publication_default_allows_the_adaptive_arch_case(self) -> None:
+        self.assertEqual(CalculationSettings().max_iterations, 5_000)
+
     def test_settings_reject_invalid_user_values(self) -> None:
         invalid = (
             CalculationSettings(method="not-a-method"),

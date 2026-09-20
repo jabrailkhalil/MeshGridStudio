@@ -164,7 +164,7 @@ UI_TEXTS: dict[str, dict[str, str]] = {
         "metric_cv_area": "CV площадей",
         "metric_cv_volume": "CV объёмов",
         "metric_volume": "Объём",
-        "metric_ar": "AR₉₅",
+        "metric_ar": "AR₉₅ (κ₂)",
         "value_yes": "да",
         "value_manual": "нет / ручная",
         "preset_square": "Квадрат",
@@ -303,7 +303,7 @@ UI_TEXTS: dict[str, dict[str, str]] = {
         "metric_cv_area": "CV areas",
         "metric_cv_volume": "CV volumes",
         "metric_volume": "Volume",
-        "metric_ar": "AR₉₅",
+        "metric_ar": "AR₉₅ (κ₂)",
         "value_yes": "yes",
         "value_manual": "no / manual",
         "preset_square": "Square",
@@ -583,7 +583,7 @@ class MeshDesignerApp:
         self.n_zeta_var = tk.StringVar(
             value=str(max(5, min(21, self._cfg_int("n_zeta", 9))))
         )
-        clamped_iterations = max(1, min(100_000, self._cfg_int("max_iterations", 2000)))
+        clamped_iterations = max(1, min(100_000, self._cfg_int("max_iterations", 5000)))
         self.max_iterations_var = tk.StringVar(value=str(clamped_iterations))
         tolerance = self._cfg_float("gradient_tolerance", 2e-5)
         if not np.isfinite(tolerance) or tolerance <= 0:
@@ -706,7 +706,7 @@ class MeshDesignerApp:
             "n_xi": integer(self.n_xi_var, 15),
             "n_eta": integer(self.n_eta_var, 15),
             "n_zeta": integer(self.n_zeta_var, 9),
-            "max_iterations": integer(self.max_iterations_var, 2000),
+            "max_iterations": integer(self.max_iterations_var, 5000),
             "gradient_tolerance": float_value(self.tolerance_var, 2e-5),
             "adaptive_mu": float_value(self.mu_var, 0.1),
             "balance_stiffness": bool(self.balance_var.get()),
@@ -1814,7 +1814,7 @@ class MeshDesignerApp:
         # Parse only values consumed by the selected solver.  Inactive fields
         # stay editable and legible, but a stale/partial value in one of them
         # must not block an unrelated method.
-        max_iterations = 2_000
+        max_iterations = 5_000
         gradient_tolerance = 2e-5
         adaptive_mu = 0.1
         if method in (METHOD_WINSLOW, METHOD_ADAPTIVE):
@@ -2849,13 +2849,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--solver-self-test",
         action="store_true",
-        help="Run all three packaged numerical methods on a small square and exit",
+        help="Run all three packaged numerical methods on a small circle and exit",
     )
     return parser.parse_args()
 
 
 def _run_solver_self_test() -> None:
-    model = EditableBoundaryModel.from_preset(PRESET_SQUARE, 7, 6)
+    model = EditableBoundaryModel.from_preset(PRESET_CIRCLE, 7, 6)
+    results: dict[str, GridResult] = {}
     for method in (METHOD_ELASTIC, METHOD_WINSLOW, METHOD_ADAPTIVE):
         result = calculate_grid(
             model.to_boundary(),
@@ -2864,12 +2865,27 @@ def _run_solver_self_test() -> None:
                 n_xi=7,
                 n_eta=6,
                 max_iterations=50,
+                gradient_tolerance=2e-6 if method == METHOD_WINSLOW else 2e-5,
             ),
         )
         metrics = grid_metrics(result)
-        if not result.converged or int(metrics["inverted_cells"]) != 0:
+        if (
+            not result.converged
+            or result.iterations <= 0
+            or int(metrics["inverted_cells"]) != 0
+        ):
             raise RuntimeError(
                 f"Packaged self-test failed for {method}: {result.message}"
+            )
+        results[method] = result
+    for first, second in (
+        (METHOD_ELASTIC, METHOD_WINSLOW),
+        (METHOD_ELASTIC, METHOD_ADAPTIVE),
+        (METHOD_WINSLOW, METHOD_ADAPTIVE),
+    ):
+        if np.max(np.abs(results[first].grid - results[second].grid)) <= 1e-6:
+            raise RuntimeError(
+                f"Packaged self-test found indistinguishable methods: {first}, {second}"
             )
     for preset_key in (PRESET3D_CUBE, PRESET3D_PRISM):
         boundary_3d = preset_boundary_3d(preset_key)
