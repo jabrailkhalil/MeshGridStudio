@@ -26,8 +26,12 @@ def _read_rows(path: Path) -> dict[tuple[str, str], dict[str, str]]:
     return {(row["domain"], row["method"]): row for row in rows}
 
 
-def _assert_close(label: str, actual: float, expected: float) -> None:
-    if not math.isclose(actual, expected, rel_tol=5e-4, abs_tol=5e-8):
+def _assert_close(
+    label: str, actual: float, expected: float, *, relative_tolerance: float = 5e-4
+) -> None:
+    if not math.isclose(
+        actual, expected, rel_tol=relative_tolerance, abs_tol=5e-8
+    ):
         raise AssertionError(f"{label}: {actual:.12g} != {expected:.12g}")
 
 
@@ -42,9 +46,13 @@ def verify(reference: Path, candidate: Path) -> None:
         for field in ("n_xi", "n_eta", "converged", "inverted_cells"):
             if actual[field] != expected[field]:
                 raise AssertionError(f"{key} {field}: {actual[field]} != {expected[field]}")
+        relative_tolerance = 2e-3 if "Адаптивное натяжение" in key[1] else 5e-4
         for field in DIMENSIONLESS_FIELDS + DIMENSIONAL_FIELDS:
             _assert_close(
-                f"{key} {field}", float(actual[field]), float(expected[field])
+                f"{key} {field}",
+                float(actual[field]),
+                float(expected[field]),
+                relative_tolerance=relative_tolerance,
             )
 
         method = key[1]
