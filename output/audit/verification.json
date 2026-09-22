@@ -9,8 +9,12 @@
     "OPENBLAS_NUM_THREADS": "1",
     "OMP_NUM_THREADS": "1"
   },
-  "tests_run": 63,
+  "tests_run": 120,
   "tests_passed": true,
+  "tests_executed": 120,
+  "tests_skipped": [],
+  "full_numerical_series_regenerated": false,
+  "scope": "Retained numerical series; rechecked gradients, controls, saved-grid metrics and tests",
   "finite_difference_checks": [
     {
       "shape": [
@@ -47,7 +51,7 @@
         172,
         16
       ],
-      "max_scaled_error": 4.372219710845754e-10
+      "max_scaled_error": 3.0160916104048086e-10
     },
     {
       "shape": [
@@ -158,7 +162,7 @@
         172,
         16
       ],
-      "max_scaled_error": 1.6190677271099574e-12
+      "max_scaled_error": 2.292627893085708e-12
     },
     {
       "shape": [
@@ -392,8 +396,8 @@
         "n_zeta": 11,
         "converged": false,
         "iterations": 1,
-        "runtime_ms": 13.226952000024994,
-        "residual": 3.986380959859201e-15,
+        "runtime_ms": 20.232270000008157,
+        "residual": 4.100316822212988e-15,
         "min_scaled_jacobian": -0.9998285329155584,
         "inverted_cells": 136,
         "corner_inverted_cells": 136,
@@ -403,7 +407,7 @@
         "directional_length_difference": 0.10417832786975838,
         "volume": 2.4644105301402055,
         "volume_cv": 1.0710562940869588,
-        "aspect_p95": 26.591632226539602
+        "aspect_p95": 26.59163222653956
       },
       "parameters": {
         "weight_xi": 1.0,
@@ -426,18 +430,18 @@
         "n_zeta": 11,
         "converged": true,
         "iterations": 41,
-        "runtime_ms": 527.0553799999789,
-        "residual": 1.5841599822254974e-15,
-        "min_scaled_jacobian": 0.9512644107640498,
+        "runtime_ms": 793.9418180000075,
+        "residual": 1.7373590500953252e-15,
+        "min_scaled_jacobian": 0.9512644107640499,
         "inverted_cells": 0,
         "corner_inverted_cells": 0,
-        "min_sampled_jacobian": 1.084705778844958,
+        "min_sampled_jacobian": 1.0847057788449612,
         "jacobian_check_scope": "27 tensor points per cell; not a certificate",
         "orthogonality_score": 0.9990338006400248,
-        "directional_length_difference": 0.11458244579226445,
+        "directional_length_difference": 0.11458244579226447,
         "volume": 2.4644105301402055,
-        "volume_cv": 0.36516930069584147,
-        "aspect_p95": 4.992565649472504
+        "volume_cv": 0.36516930069584136,
+        "aspect_p95": 4.992565649472505
       },
       "parameters": {
         "weight_xi": 0.059419676176939246,
@@ -458,17 +462,21 @@
     "min_27_sample": -0.1564756324113765
   },
   "source_sha256": {
-    "audit_reproduce.py": "873ccbe31b7f5b6c85aa7a90238dae449859e8842c9050747094169c15acc426",
+    "audit_reproduce.py": "b80670db58d5cfe8a30725e0eb131092c0e5b00add795e7addbd6ceb05e9008d",
     "build_supplementary.py": "91b3bd3230b66c67c3a9cb1ea4aa10766ee7e9674a86fe1d2debaea10e720258",
+    "capture_ui.py": "f30966cb1c3fd50aedacd644606df6b03868d8feb20d28cbd228072da95c9b97",
     "mesh_geometry_3d.py": "b948588a30d9db4682adb1f9310fa4df94b64db14efd820bf4920c3c38e01900",
-    "mesh_gui.py": "ed3f34c6f700e39d48fe152a6123937f44c32217cc26ce67b344a289ca3a8211",
+    "mesh_gui.py": "c0603674cd1b146d94d47919036dc1a4f37d482c420556ee26657015d36e5ad4",
     "mesh_gui_model.py": "fd709d63c551089009202d306fd189a6011538152e007acac56dc66e5499c27a",
     "mesh_methods.py": "83b2bc2348a3c85068ed34ddb2a022dc27dfce3c7e38abeb8d60cf7ed219aafc",
     "mesh_methods_3d.py": "80a51ef0c2d7fbacb0b24e99ce742d4a6b6f71922d9d63690b211e7782f401e5",
+    "mesh_project_io.py": "df611e77e46ddecf895df4cd6bd43111410c660ca94dd68f043c7e35f6fe1354",
+    "mesh_ui_layout.py": "c7623e0adb761f74901b78afb9120b1e44a9381fed8c4537c3ac69ce3828deda",
     "test_mesh_gui.py": "7e7529c4c283a698b7ddbe2bb5c735faa5d259828c36a0e7db611b60b352b7d1",
     "test_mesh_methods.py": "3a5ba48844636b3988f2c10781c25fadbf6b2419f20220930ca2ab08309b47cd",
     "test_mesh_methods_3d.py": "dec68307e613fa77d4b8ae06f90cb084c402dd840e82f0596a5092e848570407",
     "test_scientific_regressions.py": "18470ce5726c4efb86e020f564eacb49bc6a997040d960ac4ba0f45d4a429b4c",
+    "test_ui_workflows.py": "662bb06b4d3bff7994b9440eb27e16fbbc5116779bdcc4b7280d9c93d0580be6",
     "verify_artifacts.py": "f63a21a22f665701818e855b2cda909a487b98ea8189e46eefe5a68e0abff4d9"
   }
 }

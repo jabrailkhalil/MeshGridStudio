@@ -1,0 +1,104 @@
+name: Windows UI preview
+
+on:
+  push:
+    branches:
+      - ui/usability-review-2026-09-22
+    paths:
+      - '*.py'
+      - 'requirements*.txt'
+      - 'build_exe.ps1'
+      - '.github/workflows/windows-ui-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      MPLBACKEND: Agg
+      MESHGRID_CONFIG_DIR: '.meshgrid-ci-config'
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned build dependencies
+        run: python -m pip install -r requirements-build.txt
+      - name: Run real Tk and scientific tests
+        shell: pwsh
+        run: |
+          @'
+          import json, sys, unittest
+          from pathlib import Path
+          suite = unittest.defaultTestLoader.discover('.')
+          with Path('windows-tests.txt').open('w', encoding='utf-8') as stream:
+              result = unittest.TextTestRunner(stream=stream, verbosity=2).run(suite)
+          print(Path('windows-tests.txt').read_text(encoding='utf-8'))
+          summary = {'tests_run': result.testsRun, 'failures': len(result.failures),
+                     'errors': len(result.errors), 'skipped': len(result.skipped),
+                     'successful': result.wasSuccessful()}
+          Path('windows-test-summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
+          sys.exit(0 if result.wasSuccessful() and result.testsRun > 0 and not result.skipped else 1)
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw "Regression tests failed or skipped" }
+      - name: Build portable application
+        shell: pwsh
+        run: .\build_exe.ps1
+      - name: Exercise packaged numerical solvers and GUI
+        shell: pwsh
+        run: |
+          @'
+          import subprocess
+          from pathlib import Path
+          exe = Path('output/app/MeshGridStudio/MeshGridStudio.exe').resolve()
+          reports = []
+          for mode in ('--solver-self-test', '--smoke-test'):
+              run = subprocess.run([str(exe), mode], timeout=180, check=True)
+              reports.append(f'{mode}: exit {run.returncode}\n')
+          Path('packaged-tests.txt').write_text(''.join(reports), encoding='utf-8')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw "Packaged tests failed" }
+      - name: Capture packaged window
+        shell: pwsh
+        run: |
+          @'
+          import subprocess
+          from pathlib import Path
+          exe = Path('output/app/MeshGridStudio/MeshGridStudio.exe').resolve()
+          image = Path('windows-packaged-preview.png').resolve()
+          subprocess.run([str(exe), '--screenshot', str(image)], timeout=180, check=True)
+          assert image.stat().st_size > 10000, 'Missing or empty screenshot'
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw "Packaged screenshot failed" }
+      - name: Package exact preview
+        shell: pwsh
+        run: |
+          git rev-parse HEAD | Set-Content output/app/MeshGridStudio/SOURCE_COMMIT.txt
+          python -m pip freeze | Set-Content windows-environment.txt
+          Copy-Item UI_REVIEW.md output/app/MeshGridStudio/UI_REVIEW.md
+          "UI preview, not a published or code-signed release. Keep the runtime folder next to MeshGridStudio.exe." | Set-Content output/app/MeshGridStudio/READ_ME_FIRST.txt
+          Compress-Archive -Path output/app/MeshGridStudio -DestinationPath MeshGridStudio-UI-preview-win64.zip
+          Get-FileHash MeshGridStudio-UI-preview-win64.zip -Algorithm SHA256 | Format-List | Out-File preview-sha256.txt
+      - name: Upload preview and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeshGridStudio-Windows-UI-preview
+          path: |
+            MeshGridStudio-UI-preview-win64.zip
+            windows-tests.txt
+            windows-test-summary.json
+            windows-environment.txt
+            packaged-tests.txt
+            windows-packaged-preview.png
+            preview-sha256.txt
+          retention-days: 14

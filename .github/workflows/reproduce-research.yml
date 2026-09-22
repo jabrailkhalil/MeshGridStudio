@@ -25,10 +25,10 @@ jobs:
         run: |
           python -m pip install -r requirements.txt
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends texlive-xetex texlive-lang-cyrillic texlive-latex-extra texlive-fonts-recommended fonts-dejavu-core
+          sudo apt-get install -y --no-install-recommends texlive-xetex texlive-lang-cyrillic texlive-latex-extra texlive-fonts-recommended fonts-dejavu-core xvfb xauth python3-tk
       - name: Reproduce experiments and tests
         run: |
-          python audit_reproduce.py --full
+          xvfb-run -a python audit_reproduce.py --full
           python -m pip freeze > output/audit/ci_environment.txt
       - name: Compile manuscript and verify package
         run: |
