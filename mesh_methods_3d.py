@@ -5,12 +5,14 @@ hexahedral domains.  The mathematical structure is kept dimension-consistent:
 
 * elastic nets: the weighted linear spring system is solved on the interior of
   the parametric cube, with balanced directional stiffnesses;
-* Winslow: the dimension-invariant Winslow functional
-  ``I = int (|r_xi|^2 + |r_eta|^2 + |r_zeta|^2)/J^(2/3)`` is minimized, which
-  reduces to the classical 2D form ``(|p|^2+|q|^2)/J`` when the mapping is
-  planar;
+* inverse mean ratio: the known shape functional
+  ``I = int (|r_xi|^2 + |r_eta|^2 + |r_zeta|^2)/J^(2/3)`` is minimized.
+  It is NOT the inverse-harmonic 3D Winslow energy ``int |cof A|^2/J``.
+  The dimension-indexed family ``|A|^2/J^(2/d)`` agrees with Winslow at
+  d=2, not by restricting a singular 3D map to a plane. Legacy Python
+  names containing 'winslow' are retained for API compatibility;
 * adaptive tension: the normalized metric functional
-  ``(tr D - 3)^2/det D + (det D - 1)^2 - mu ln(det D)`` with
+  ``(tr D - 3)^2/det D + (det D - 1)^2 - mu ln(J/J_target)`` with
   ``D = G / J_target^(2/3)``, the direct 3D counterpart of the 2D functional.
 
 Run ``python mesh_methods_3d.py`` to reproduce the 3D figures, tables and
@@ -32,6 +34,9 @@ from typing import TYPE_CHECKING, Iterable
 import numpy as np
 
 from mesh_methods import GridResult, _feasible_lbfgs, arch_boundary, coons_patch
+from mesh_geometry_3d import (
+    signed_cell_volumes, center_cell_aspect_ratios, sampled_cell_min_jacobians,
+)
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -112,6 +117,8 @@ class Boundary3D:
 
     def validate(self, atol: float = 1e-9) -> None:
         """Reject non-finite faces and inconsistent shared edges and corners."""
+        if len(self.faces) != 6:
+            raise ValueError("A hexahedral boundary requires exactly six faces")
         for face in self.faces:
             if not np.all(np.isfinite(face.points)):
                 raise ValueError(f"Boundary {self.name!r} contains non-finite face samples")
@@ -136,8 +143,16 @@ class Boundary3D:
         for left, right in edge_checks:
             face_a, a1, a2 = left
             face_b, b1, b2 = right
-            edge_a = self.faces[face_a](a1, a2)
-            edge_b = self.faces[face_b](b1, b2)
+            # Along an edge Face3D is piecewise linear. Check the union of
+            # both knot sets, not 33 unrelated samples which can miss a kink.
+            fa, fb = self.faces[face_a], self.faces[face_b]
+            a_first, b_first = np.ndim(a1) > 0, np.ndim(b1) > 0
+            knots = np.unique(np.concatenate((
+                np.linspace(0.0, 1.0, fa.nu if a_first else fa.nv),
+                np.linspace(0.0, 1.0, fb.nu if b_first else fb.nv),
+            )))
+            edge_a = fa(knots if a_first else a1, a2 if a_first else knots)
+            edge_b = fb(knots if b_first else b1, b2 if b_first else knots)
             mismatches.append(float(np.max(np.abs(edge_a - edge_b))))
         mismatch = max(mismatches)
         if mismatch > atol:
@@ -459,14 +474,22 @@ def min_signed_jacobian_3d(grid: np.ndarray) -> float:
 
 
 def volume_3d(grid: np.ndarray) -> float:
-    """Volume of the hexahedral domain measured on the grid."""
+    """Signed volume of the piecewise-trilinear grid, by exact Gauss quadrature."""
+    return float(np.sum(signed_cell_volumes(grid)))
 
-    n_xi, n_eta, n_zeta, _ = grid.shape
-    dxi = 1.0 / (n_xi - 1)
-    deta = 1.0 / (n_eta - 1)
-    dzeta = 1.0 / (n_zeta - 1)
-    jacobians = corner_jacobians_3d(grid)
-    return float(np.sum(np.mean(jacobians, axis=-1)) * dxi * deta * dzeta)
+
+def _sampled_geometry_is_positive(
+    grid: np.ndarray, derivative_jacobian_floor: float = 0.0
+) -> bool:
+    """27-point diagnostic per cell, NOT a certificate between sample points.
+
+    The threshold is in whole-domain derivative units, as used by the
+    variational objectives; the geometry helper returns cell-local units.
+    """
+    if not np.all(np.isfinite(grid)):
+        return False
+    cells = int(np.prod(np.asarray(grid.shape[:3]) - 1))
+    return bool(np.all(sampled_cell_min_jacobians(grid) * cells > derivative_jacobian_floor))
 
 
 # --------------------------------------------------------------------------
@@ -508,9 +531,9 @@ def generate_harmonic_3d(
     from scipy.sparse import lil_matrix
     from scipy.sparse.linalg import spsolve
 
-    if weight_xi <= 0.0 or weight_eta <= 0.0 or weight_zeta <= 0.0:
+    if any(not np.isfinite(v) or v <= 0.0 for v in (weight_xi, weight_eta, weight_zeta)):
         raise ValueError("3D harmonic weights must be positive")
-    if balance_tolerance <= 0.0:
+    if not np.isfinite(balance_tolerance) or balance_tolerance <= 0.0:
         raise ValueError("balance_tolerance must be positive")
     if balance_max_iterations < 1:
         raise ValueError("balance_max_iterations must be at least one")
@@ -582,9 +605,9 @@ def generate_harmonic_3d(
 
     runtime = time.perf_counter() - started
     solver_converged = bool(np.isfinite(residual) and residual < 1e-10)
-    geometry_valid = bool(np.all(np.isfinite(grid)) and min_signed_jacobian_3d(grid) > 0.0)
+    geometry_valid = _sampled_geometry_is_positive(grid)
     if not geometry_valid:
-        message = "Linear equations converged, but the 3D grid is folded"
+        message = "3D sampled-Jacobian diagnostic failed (27 points per cell)"
     elif balance_stiffness:
         message = "3D sparse direct solve with balanced directional energies"
     else:
@@ -607,6 +630,7 @@ def generate_harmonic_3d(
             "energy_mismatch": balance_history[-1],
             "solver_converged": str(solver_converged),
             "geometry_valid": str(geometry_valid),
+            "geometry_check_scope": "27 tensor points per cell; not a certificate",
         },
         history=balance_history,
     )
@@ -628,7 +652,10 @@ def _unpack_interior_3d(template: np.ndarray, packed: np.ndarray) -> np.ndarray:
 
 
 def _target_volume_3d(boundary: Boundary3D, n: int) -> float:
-    """Volume of the boundary on a refined TFI grid (near the true value)."""
+    """Signed volume of a refined piecewise-trilinear boundary approximation.
+
+    This is a numerical reference volume, not the exact analytic-domain volume.
+    """
     refined = coons_patch_3d(boundary, n, n, n)
     return volume_3d(refined)
 
@@ -638,7 +665,7 @@ def _winslow_objective_and_gradient_3d(
     template: np.ndarray,
     jacobian_floor: float = 0.0,
 ) -> tuple[float, np.ndarray]:
-    """Dimension-invariant Winslow functional ``|p|^2+|q|^2+|r|^2 over J^(2/3)``.
+    """Inverse mean-ratio shape functional ``|p|^2+|q|^2+|r|^2 over J^(2/3)``.
 
     The eight one-sided derivative triples of every cell form the discrete
     density.  On the positive-Jacobian component the gradient is assembled by
@@ -795,27 +822,29 @@ def generate_winslow_3d(
     gradient_tolerance: float = 2e-6,
     jacobian_floor: float = 1e-14,
 ) -> GridResult:
-    """Minimize the dimension-invariant 3D Winslow functional."""
+    """Minimize the known inverse mean-ratio energy (legacy API name)."""
 
-    if jacobian_floor < 0.0:
+    if not np.isfinite(jacobian_floor) or jacobian_floor < 0.0:
         raise ValueError("jacobian_floor must be non-negative")
     started = time.perf_counter()
     template = coons_patch_3d(boundary, n_xi, n_eta, n_zeta)
-    target_jacobian = _target_volume_3d(boundary, max(n_xi, 21))
+    target_jacobian = _target_volume_3d(boundary, max(n_xi, n_eta, n_zeta, 21))
+    if not np.isfinite(target_jacobian) or target_jacobian <= 0.0:
+        raise ValueError("The reference boundary volume must be finite and positive")
     derivative_jacobian_floor = jacobian_floor * target_jacobian
     raw_jacobian_floor = derivative_jacobian_floor / (
         (n_xi - 1) * (n_eta - 1) * (n_zeta - 1)
     )
-    if min_signed_jacobian_3d(template) <= raw_jacobian_floor:
+    if min_signed_jacobian_3d(template) <= derivative_jacobian_floor:
         raise ValueError("Initial 3D grid is folded; Winslow minimization cannot start")
 
-    length_scale = target_jacobian ** (1.0 / 3.0)
+    length_scale = float(np.cbrt(target_jacobian))
+    normalized_template = template / length_scale
 
     def fun(scaled: np.ndarray) -> tuple[float, np.ndarray]:
-        value, physical_gradient = _winslow_objective_and_gradient_3d(
-            scaled * length_scale, template, derivative_jacobian_floor
+        return _winslow_objective_and_gradient_3d(
+            scaled, normalized_template, jacobian_floor
         )
-        return value, physical_gradient * length_scale
 
     initial = _pack_interior_3d(template) / length_scale
     initial_value, _ = fun(initial)
@@ -836,7 +865,9 @@ def generate_winslow_3d(
         gradient_tolerance=gradient_tolerance,
     )
     grid = _unpack_interior_3d(template, optimum * length_scale)
-    valid = min_signed_jacobian_3d(grid) > raw_jacobian_floor
+    valid = _sampled_geometry_is_positive(grid, derivative_jacobian_floor)
+    if not valid:
+        message += "; 27-point sampled-Jacobian diagnostic failed"
     converged = bool(
         valid
         and np.all(np.isfinite(grid))
@@ -845,7 +876,7 @@ def generate_winslow_3d(
         and final_value <= initial_value + 1e-12 * max(1.0, abs(initial_value))
     )
     return GridResult(
-        method="Винслоу (3D)",
+        method="Mean ratio (3D)",
         grid=grid,
         converged=converged,
         iterations=iterations,
@@ -857,6 +888,9 @@ def generate_winslow_3d(
             "normalized_jacobian_floor": jacobian_floor,
             "jacobian_floor": derivative_jacobian_floor,
             "raw_jacobian_floor": raw_jacobian_floor,
+            "geometry_check_scope": "27 tensor points per cell; not a certificate",
+            "solver_converged": str(optimizer_converged),
+            "geometry_valid": str(valid),
             "length_scale": length_scale,
             "target_jacobian": target_jacobian,
             "initial_objective": initial_value,
@@ -878,30 +912,28 @@ def generate_adaptive_tension_3d(
 ) -> GridResult:
     """Minimize the normalized 3D adaptive-tension functional."""
 
-    if jacobian_floor < 0.0:
+    if not np.isfinite(jacobian_floor) or jacobian_floor < 0.0:
         raise ValueError("jacobian_floor must be non-negative")
-    if orientation_barrier < 0.0:
+    if not np.isfinite(orientation_barrier) or orientation_barrier < 0.0:
         raise ValueError("orientation_barrier must be non-negative")
     started = time.perf_counter()
     template = coons_patch_3d(boundary, n_xi, n_eta, n_zeta)
-    target_jacobian = _target_volume_3d(boundary, max(n_xi, 21))
+    target_jacobian = _target_volume_3d(boundary, max(n_xi, n_eta, n_zeta, 21))
+    if not np.isfinite(target_jacobian) or target_jacobian <= 0.0:
+        raise ValueError("The reference boundary volume must be finite and positive")
     derivative_jacobian_floor = jacobian_floor * target_jacobian
     raw_jacobian_floor = derivative_jacobian_floor / (
         (n_xi - 1) * (n_eta - 1) * (n_zeta - 1)
     )
-    if min_signed_jacobian_3d(template) <= raw_jacobian_floor:
+    if min_signed_jacobian_3d(template) <= derivative_jacobian_floor:
         raise ValueError("Initial 3D grid is folded; adaptive tension cannot start")
-    length_scale = target_jacobian ** (1.0 / 3.0)
+    length_scale = float(np.cbrt(target_jacobian))
+    normalized_template = template / length_scale
 
     def fun(scaled: np.ndarray) -> tuple[float, np.ndarray]:
-        value, physical_gradient = _adaptive_objective_and_gradient_3d(
-            scaled * length_scale,
-            template,
-            target_jacobian,
-            derivative_jacobian_floor,
-            orientation_barrier,
+        return _adaptive_objective_and_gradient_3d(
+            scaled, normalized_template, 1.0, jacobian_floor, orientation_barrier
         )
-        return value, physical_gradient * length_scale
 
     initial = _pack_interior_3d(template) / length_scale
     initial_value, initial_gradient = fun(initial)
@@ -922,7 +954,9 @@ def generate_adaptive_tension_3d(
         gradient_tolerance=gradient_tolerance,
     )
     grid = _unpack_interior_3d(template, optimum * length_scale)
-    valid = min_signed_jacobian_3d(grid) > raw_jacobian_floor
+    valid = _sampled_geometry_is_positive(grid, derivative_jacobian_floor)
+    if not valid:
+        message += "; 27-point sampled-Jacobian diagnostic failed"
     converged = bool(
         valid
         and np.all(np.isfinite(grid))
@@ -949,6 +983,9 @@ def generate_adaptive_tension_3d(
             "normalized_jacobian_floor": jacobian_floor,
             "jacobian_floor": derivative_jacobian_floor,
             "raw_jacobian_floor": raw_jacobian_floor,
+            "geometry_check_scope": "27 tensor points per cell; not a certificate",
+            "solver_converged": str(optimizer_converged),
+            "geometry_valid": str(valid),
             "orientation_barrier": orientation_barrier,
             "initial_objective": initial_value,
             "final_objective": final_value,
@@ -964,11 +1001,8 @@ def generate_adaptive_tension_3d(
 
 
 def cell_volumes_3d(grid: np.ndarray) -> np.ndarray:
-    n_xi, n_eta, n_zeta, _ = grid.shape
-    dxi = 1.0 / (n_xi - 1)
-    deta = 1.0 / (n_eta - 1)
-    dzeta = 1.0 / (n_zeta - 1)
-    return np.mean(corner_jacobians_3d(grid), axis=-1) * dxi * deta * dzeta
+    """Signed integrals of the trilinear cells, exact up to roundoff."""
+    return signed_cell_volumes(grid)
 
 
 def grid_metrics_3d(result: GridResult) -> dict[str, float | int | str | bool]:
@@ -995,17 +1029,10 @@ def grid_metrics_3d(result: GridResult) -> dict[str, float | int | str | bool]:
     corners = corner_jacobians_3d(grid)
     volumes = cell_volumes_3d(grid)
 
-    # Per-cell aspect: sqrt of the eigenvalue ratio of the metric tensor.
-    p_back, q_back, r_back = _corner_derivatives(grid, 0, 0, 0)
-    metric = np.zeros(volumes.shape + (3, 3))
-    metric[..., 0, 0] = np.sum(p_back * p_back, axis=-1)
-    metric[..., 1, 1] = np.sum(q_back * q_back, axis=-1)
-    metric[..., 2, 2] = np.sum(r_back * r_back, axis=-1)
-    metric[..., 0, 1] = metric[..., 1, 0] = np.sum(p_back * q_back, axis=-1)
-    metric[..., 0, 2] = metric[..., 2, 0] = np.sum(p_back * r_back, axis=-1)
-    metric[..., 1, 2] = metric[..., 2, 1] = np.sum(q_back * r_back, axis=-1)
-    eigenvalues = np.linalg.eigvalsh(metric)
-    aspect = np.sqrt(eigenvalues[..., 2] / np.maximum(eigenvalues[..., 0], 1e-300))
+    # Cell shape, at the center and in cell-local coordinates. Using one
+    # corner or whole-domain derivatives changes the quantity being measured.
+    aspect = center_cell_aspect_ratios(grid)
+    sampled_minima = sampled_cell_min_jacobians(grid)
 
     def coefficient_of_variation(values: np.ndarray) -> float:
         mean = float(np.mean(values))
@@ -1030,7 +1057,10 @@ def grid_metrics_3d(result: GridResult) -> dict[str, float | int | str | bool]:
         "runtime_ms": 1000.0 * result.runtime_s,
         "residual": result.residual,
         "min_scaled_jacobian": float(np.min(scaled)),
-        "inverted_cells": int(np.sum(np.any(corners <= 0.0, axis=-1))),
+        "inverted_cells": int(np.sum(sampled_minima <= 0.0)),
+        "corner_inverted_cells": int(np.sum(np.any(corners <= 0.0, axis=-1))),
+        "min_sampled_jacobian": float(np.min(sampled_minima) * (n_xi - 1) * (n_eta - 1) * (n_zeta - 1)),
+        "jacobian_check_scope": "27 tensor points per cell; not a certificate",
         "orthogonality_score": orthogonality_score,
         "directional_length_difference": directional_length_difference,
         "volume": float(np.sum(volumes)),
@@ -1183,6 +1213,9 @@ def run_experiment_3d(
         domain_results.append((key, boundary.name, results))
         figure = plt.figure(figsize=(15.6, 5.4))
         for index, result in enumerate(results):
+            grid_directory = output_dir / "grids_3d"
+            grid_directory.mkdir(exist_ok=True)
+            np.savez_compressed(grid_directory / f"{key}_{index}.npz", grid=result.grid)
             metrics = grid_metrics_3d(result)
             row: dict[str, object] = {"domain": boundary.name, **metrics}
             all_rows.append(row)
@@ -1191,6 +1224,7 @@ def run_experiment_3d(
                     "domain": boundary.name,
                     "method": result.method,
                     "n": size,
+                    "grid_file": f"grids_3d/{key}_{index}.npz",
                     "converged": result.converged,
                     "iterations": result.iterations,
                     "residual": result.residual,
@@ -1227,7 +1261,7 @@ def run_experiment_3d(
         except (AttributeError, TypeError):
             pass
     overlay_figure.suptitle(
-        f"Наложение 3D-сеток {n}×{n}×{n} (каждая вторая линия)", fontsize=12
+        "Наложение 3D-сеток (шар: до 9 узлов; каждая вторая линия)", fontsize=12
     )
     overlay_figure.savefig(
         output_dir / "mesh_overlays_3d.png", dpi=240, bbox_inches="tight"
@@ -1237,7 +1271,7 @@ def run_experiment_3d(
 
     fieldnames = list(all_rows[0].keys())
     with (output_dir / "results_3d.csv").open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(all_rows)
     write_latex_table_3d(all_rows, output_dir / "results_table_3d.tex")
@@ -1249,6 +1283,16 @@ def run_experiment_3d(
         "scipy": scipy.__version__,
         "matplotlib": matplotlib.__version__,
         "n": n,
+        "volume_definition": "2x2x2 Gauss integral of signed trilinear Jacobian",
+        "aspect_definition": "center cell-local Jacobian singular-value ratio",
+        "jacobian_check_scope": "27 tensor points per cell; not a certificate",
+        "geometry": {
+            "cube_half_side": 1.0, "twist_radians": 0.6,
+            "ball_radius": 1.0, "ball_face_samples": 41,
+            "ball_n": min(n, 9), "reference_volume_n": max(n, 21),
+            "arch_inner_radius": 0.45, "arch_outer_radius": 1.0,
+            "arch_height": 2.0,
+        },
         "runs": raw_runs,
     }
     (output_dir / "run_metadata_3d.json").write_text(
@@ -1319,7 +1363,7 @@ def main() -> None:
     for row in rows:
         print(
             f"{row['domain']:14s} | {row['method']:19s} | "
-            f"valid={row['inverted_cells'] == 0!s:5s} | "
+            f"samples_positive={row['inverted_cells'] == 0!s:5s} | "
             f"Q_orth={row['orthogonality_score']:.4f} | "
             f"CV_V={row['volume_cv']:.4f} | "
             f"Jsc={row['min_scaled_jacobian']:.4f}"

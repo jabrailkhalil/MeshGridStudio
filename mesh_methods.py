@@ -471,14 +471,14 @@ def _feasible_lbfgs(
 
     if max_iterations < 0:
         raise ValueError("max_iterations must be non-negative")
-    if gradient_tolerance <= 0.0:
+    if not np.isfinite(gradient_tolerance) or gradient_tolerance <= 0.0:
         raise ValueError("gradient_tolerance must be positive")
     if memory_size < 1:
         raise ValueError("memory_size must be at least one")
     x = np.asarray(initial, dtype=float).copy()
     value, gradient = fun(x)
     history = [float(value)]
-    if not np.isfinite(value) or value >= 1e90:
+    if not np.isfinite(value) or value >= 1e90 or not np.all(np.isfinite(gradient)):
         # The initial point lies outside the admissible set, where the
         # barrier returns zero gradient.  Convergence must not be claimed
         # for such a point.
@@ -534,6 +534,7 @@ def _feasible_lbfgs(
             trial_value, trial_gradient = fun(trial_x)
             if (
                 np.isfinite(trial_value)
+                and np.all(np.isfinite(trial_gradient))
                 and trial_value < 1e90
                 and trial_value
                 <= value + 1e-4 * step * directional_derivative
@@ -1004,11 +1005,14 @@ def grid_metrics(result: GridResult) -> dict[str, float | int | str | bool]:
         mean = float(np.mean(values))
         return float(np.std(values) / mean) if mean > 0.0 else math.inf
 
-    trace = a + c
-    discriminant = np.sqrt(np.maximum((a - c) ** 2 + 4.0 * b**2, 0.0))
-    lambda_max = 0.5 * (trace + discriminant)
-    lambda_min = np.maximum(0.5 * (trace - discriminant), 1e-30)
-    aspect = np.sqrt(lambda_max / lambda_min)
+    # Shape of the actual cell, not of the whole-domain coordinate map.
+    # SVD avoids cancellation when extracting the smaller metric eigenvalue.
+    cell_matrix = np.stack((p * dxi, q * deta), axis=-1)
+    singular = np.linalg.svd(cell_matrix, compute_uv=False)
+    aspect = np.divide(
+        singular[..., 0], singular[..., -1],
+        out=np.full(singular.shape[:-1], np.inf), where=singular[..., -1] > 0.0,
+    )
 
     return {
         "method": result.method,
@@ -1220,7 +1224,7 @@ def run_experiment(
 
     fieldnames = list(all_rows[0].keys())
     with (output_dir / "results.csv").open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(all_rows)
     write_latex_table(all_rows, output_dir / "results_table.tex")
