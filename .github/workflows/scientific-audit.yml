@@ -3,6 +3,7 @@ name: Scientific audit
 on:
   push:
     branches:
+      - main
       - audit/scientific-corrections-2026-09-22
   pull_request:
 
@@ -30,6 +31,8 @@ jobs:
         run: |
           set -o pipefail
           python -m unittest discover -v 2>&1 | tee audit-test-log.txt
+      - name: Verify committed scientific artifacts
+        run: python verify_artifacts.py
       - name: Package exact tested source snapshot
         if: always()
         run: |
