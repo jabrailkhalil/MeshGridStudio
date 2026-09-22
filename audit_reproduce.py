@@ -112,6 +112,11 @@ def main() -> None:
         numpy=np.__version__, scipy=scipy.__version__, matplotlib=matplotlib.__version__,
         threads={k: os.environ.get(k) for k in ('OPENBLAS_NUM_THREADS','OMP_NUM_THREADS')},
         tests_run=test_result.testsRun, tests_passed=test_result.wasSuccessful(),
+        tests_executed=test_result.testsRun-len(test_result.skipped),
+        tests_skipped=[dict(test=str(test),reason=reason) for test,reason in test_result.skipped],
+        full_numerical_series_regenerated=bool(args.full),
+        scope=('Full numerical series, gradients, saved-grid metrics and tests' if args.full else
+               'Retained numerical series; rechecked gradients, controls, saved-grid metrics and tests'),
         finite_difference_checks=checks, unbalanced_balanced_prism_control=controls,
         corner_counterexample=dict(min_corner=m3.min_signed_jacobian_3d(grid),
                                    min_27_sample=float(np.min(m3.sampled_cell_min_jacobians(grid)))),
