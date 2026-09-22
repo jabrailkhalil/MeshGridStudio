@@ -23,6 +23,7 @@ jobs:
       OMP_NUM_THREADS: '1'
       MPLBACKEND: Agg
       MESHGRID_CONFIG_DIR: '.meshgrid-ci-config'
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,33 +36,49 @@ jobs:
       - name: Run real Tk and scientific tests
         shell: pwsh
         run: |
-          python -m unittest discover -v 2>&1 | Tee-Object windows-tests.txt
-          if ($LASTEXITCODE -ne 0) { throw "Regression tests failed" }
-          if (Select-String -Path windows-tests.txt -Pattern "skipped|FAILED") { throw "Incomplete tests" }
+          @'
+          import json, sys, unittest
+          from pathlib import Path
+          suite = unittest.defaultTestLoader.discover('.')
+          with Path('windows-tests.txt').open('w', encoding='utf-8') as stream:
+              result = unittest.TextTestRunner(stream=stream, verbosity=2).run(suite)
+          print(Path('windows-tests.txt').read_text(encoding='utf-8'))
+          summary = {'tests_run': result.testsRun, 'failures': len(result.failures),
+                     'errors': len(result.errors), 'skipped': len(result.skipped),
+                     'successful': result.wasSuccessful()}
+          Path('windows-test-summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
+          sys.exit(0 if result.wasSuccessful() and result.testsRun > 0 and not result.skipped else 1)
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw "Regression tests failed or skipped" }
       - name: Build portable application
         shell: pwsh
         run: .\build_exe.ps1
       - name: Exercise packaged numerical solvers and GUI
         shell: pwsh
         run: |
-          $exe = (Resolve-Path output/app/MeshGridStudio/MeshGridStudio.exe).Path
-          foreach ($mode in @("--solver-self-test", "--smoke-test")) {
-            $process = Start-Process -FilePath $exe -ArgumentList $mode -PassThru
-            if (-not $process.WaitForExit(180000)) {
-              $process.Kill()
-              throw "Packaged test timeout: $mode"
-            }
-            if ($process.ExitCode -ne 0) { throw "Packaged test failed: $mode ($($process.ExitCode))" }
-          }
-          "Packaged 2D/3D solver self-test and Tk smoke test passed." | Set-Content packaged-tests.txt
+          @'
+          import subprocess
+          from pathlib import Path
+          exe = Path('output/app/MeshGridStudio/MeshGridStudio.exe').resolve()
+          reports = []
+          for mode in ('--solver-self-test', '--smoke-test'):
+              run = subprocess.run([str(exe), mode], timeout=180, check=True)
+              reports.append(f'{mode}: exit {run.returncode}\n')
+          Path('packaged-tests.txt').write_text(''.join(reports), encoding='utf-8')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw "Packaged tests failed" }
       - name: Capture packaged window
         shell: pwsh
         run: |
-          $exe = (Resolve-Path output/app/MeshGridStudio/MeshGridStudio.exe).Path
-          $process = Start-Process -FilePath $exe -ArgumentList @("--screenshot", "windows-packaged-preview.png") -PassThru
-          if (-not $process.WaitForExit(180000)) { $process.Kill(); throw "Screenshot timeout" }
-          if ($process.ExitCode -ne 0) { throw "Screenshot run failed" }
-          if ((Get-Item windows-packaged-preview.png).Length -lt 10000) { throw "Missing or empty screenshot" }
+          @'
+          import subprocess
+          from pathlib import Path
+          exe = Path('output/app/MeshGridStudio/MeshGridStudio.exe').resolve()
+          image = Path('windows-packaged-preview.png').resolve()
+          subprocess.run([str(exe), '--screenshot', str(image)], timeout=180, check=True)
+          assert image.stat().st_size > 10000, 'Missing or empty screenshot'
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw "Packaged screenshot failed" }
       - name: Package exact preview
         shell: pwsh
         run: |
@@ -79,6 +96,7 @@ jobs:
           path: |
             MeshGridStudio-UI-preview-win64.zip
             windows-tests.txt
+            windows-test-summary.json
             windows-environment.txt
             packaged-tests.txt
             windows-packaged-preview.png
