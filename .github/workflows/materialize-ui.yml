@@ -1,17 +1,13 @@
 name: Materialize reviewed UI upgrade
-
 on:
   push:
     branches: [ui/usability-review-2026-09-22]
     paths: [.github/workflows/materialize-ui.yml]
-
 permissions:
   contents: write
-
 concurrency:
   group: isolated-ui-materializer
   cancel-in-progress: false
-
 jobs:
   materialize:
     runs-on: ubuntu-latest
@@ -28,26 +24,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Verify and apply exact tested source delta
+      - name: Verify and apply source delta
         run: |
           set -o pipefail
           python .github/apply-ui-upgrade.py 2>&1 | tee ui-apply.log
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('.github/workflows/windows-ui-preview.yml')
-          t = p.read_text()
-          lines = [line for line in t.splitlines() if 'MESHGRID_CONFIG_DIR:' in line]
-          assert len(lines) == 1
-          p.write_text(t.replace(lines[0], "      MESHGRID_CONFIG_DIR: '.meshgrid-ci-config'"))
-          PY
-      - name: Install numerical, Tk and document dependencies
+      - name: Install dependencies
         run: |
           python -m pip install -r requirements.txt
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends xvfb xauth python3-tk texlive-xetex texlive-lang-cyrillic texlive-latex-extra texlive-fonts-recommended fonts-dejavu-core
       - name: Capture actual final interface
         run: xvfb-run -a -s '-screen 0 1600x1000x24' python capture_ui.py
-      - name: Test all workflows and retained scientific results
+      - name: Test UI and retained scientific results
         run: |
           set -o pipefail
           xvfb-run -a -s '-screen 0 1600x1000x24' python audit_reproduce.py 2>&1 | tee ui-audit.log
@@ -60,19 +48,21 @@ jobs:
           assert not v['full_numerical_series_regenerated']
           PY
           git diff --exit-code -- mesh_methods.py mesh_methods_3d.py mesh_geometry_3d.py mesh_gui_model.py
-      - name: Rebuild document and supplementary with current evidence
+      - name: Build document and supplementary
         run: |
+          set -o pipefail
           xelatex -interaction=nonstopmode -halt-on-error -output-directory=output/pdf article.tex > ui-latex-1.log
           xelatex -interaction=nonstopmode -halt-on-error -output-directory=output/pdf article.tex > ui-latex-2.log
           if grep -E 'Missing character:|undefined references|Citation .* undefined' ui-latex-2.log; then exit 1; fi
           python build_supplementary.py
           python verify_artifacts.py | tee ui-artifact-verification.log
-      - name: Commit verified snapshot only to review branch
+      - name: Commit source only to isolated branch
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/ui/usability-review-2026-09-22
-          git rm -r .github/ui_payload .github/apply-ui-upgrade.py .github/workflows/materialize-ui.yml
-          git add mesh_gui.py mesh_ui_layout.py mesh_project_io.py test_ui_workflows.py audit_reproduce.py capture_ui.py mesh_grid_studio_version.txt UI_REVIEW.md README.md SUPPLEMENTARY.md .github/workflows docs/ui-usability-*.png output/audit output/generated/verification_numbers.tex output/pdf/article.pdf output/article-supplementary-materials.zip
+          git rm -r .github/ui_payload .github/apply-ui-upgrade.py
+          git add mesh_gui.py mesh_ui_layout.py mesh_project_io.py test_ui_workflows.py audit_reproduce.py capture_ui.py mesh_grid_studio_version.txt UI_REVIEW.md README.md SUPPLEMENTARY.md docs/ui-usability-*.png output/audit output/generated/verification_numbers.tex output/pdf/article.pdf output/article-supplementary-materials.zip
+          git diff --cached --exit-code -- .github/workflows
           git config user.name 'MeshGrid verification'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'ui: apply verified workflow redesign, safe projects and 57 UI regressions'
@@ -83,7 +73,7 @@ jobs:
           git rev-parse HEAD > UI_SOURCE_COMMIT.txt
           git archive --format=zip --output=MeshGridStudio-ui-reviewed-source.zip HEAD
           sha256sum MeshGridStudio-ui-reviewed-source.zip > UI_SOURCE_SHA256.txt
-      - name: Upload reviewed source and evidence
+      - name: Upload source and evidence
         uses: actions/upload-artifact@v4
         with:
           name: MeshGridStudio-UI-reviewed-source
