@@ -1,0 +1,86 @@
+name: Windows UI preview
+
+on:
+  push:
+    branches:
+      - ui/usability-review-2026-09-22
+    paths:
+      - '*.py'
+      - 'requirements*.txt'
+      - 'build_exe.ps1'
+      - '.github/workflows/windows-ui-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      MPLBACKEND: Agg
+      MESHGRID_CONFIG_DIR: '.meshgrid-ci-config'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned build dependencies
+        run: python -m pip install -r requirements-build.txt
+      - name: Run real Tk and scientific tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -v 2>&1 | Tee-Object windows-tests.txt
+          if ($LASTEXITCODE -ne 0) { throw "Regression tests failed" }
+          if (Select-String -Path windows-tests.txt -Pattern "skipped|FAILED") { throw "Incomplete tests" }
+      - name: Build portable application
+        shell: pwsh
+        run: .\build_exe.ps1
+      - name: Exercise packaged numerical solvers and GUI
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path output/app/MeshGridStudio/MeshGridStudio.exe).Path
+          foreach ($mode in @("--solver-self-test", "--smoke-test")) {
+            $process = Start-Process -FilePath $exe -ArgumentList $mode -PassThru
+            if (-not $process.WaitForExit(180000)) {
+              $process.Kill()
+              throw "Packaged test timeout: $mode"
+            }
+            if ($process.ExitCode -ne 0) { throw "Packaged test failed: $mode ($($process.ExitCode))" }
+          }
+          "Packaged 2D/3D solver self-test and Tk smoke test passed." | Set-Content packaged-tests.txt
+      - name: Capture packaged window
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path output/app/MeshGridStudio/MeshGridStudio.exe).Path
+          $process = Start-Process -FilePath $exe -ArgumentList @("--screenshot", "windows-packaged-preview.png") -PassThru
+          if (-not $process.WaitForExit(180000)) { $process.Kill(); throw "Screenshot timeout" }
+          if ($process.ExitCode -ne 0) { throw "Screenshot run failed" }
+          if ((Get-Item windows-packaged-preview.png).Length -lt 10000) { throw "Missing or empty screenshot" }
+      - name: Package exact preview
+        shell: pwsh
+        run: |
+          git rev-parse HEAD | Set-Content output/app/MeshGridStudio/SOURCE_COMMIT.txt
+          python -m pip freeze | Set-Content windows-environment.txt
+          Copy-Item UI_REVIEW.md output/app/MeshGridStudio/UI_REVIEW.md
+          "UI preview, not a published or code-signed release. Keep the runtime folder next to MeshGridStudio.exe." | Set-Content output/app/MeshGridStudio/READ_ME_FIRST.txt
+          Compress-Archive -Path output/app/MeshGridStudio -DestinationPath MeshGridStudio-UI-preview-win64.zip
+          Get-FileHash MeshGridStudio-UI-preview-win64.zip -Algorithm SHA256 | Format-List | Out-File preview-sha256.txt
+      - name: Upload preview and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeshGridStudio-Windows-UI-preview
+          path: |
+            MeshGridStudio-UI-preview-win64.zip
+            windows-tests.txt
+            windows-environment.txt
+            packaged-tests.txt
+            windows-packaged-preview.png
+            preview-sha256.txt
+          retention-days: 14
