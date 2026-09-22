@@ -36,9 +36,9 @@ jobs:
           from pathlib import Path
           p = Path('.github/workflows/windows-ui-preview.yml')
           t = p.read_text()
-          old = "'${{ runner.temp }}\\meshgrid-ui-test-config'"
-          assert t.count(old) == 1
-          p.write_text(t.replace(old, "'.meshgrid-ci-config'"))
+          lines = [line for line in t.splitlines() if 'MESHGRID_CONFIG_DIR:' in line]
+          assert len(lines) == 1
+          p.write_text(t.replace(lines[0], "      MESHGRID_CONFIG_DIR: '.meshgrid-ci-config'"))
           PY
       - name: Install numerical, Tk and document dependencies
         run: |
