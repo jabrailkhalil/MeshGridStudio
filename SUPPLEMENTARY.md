@@ -1,38 +1,49 @@
-# Дополнительные материалы к статье
+# Дополнительные материалы
 
-Архив `article-supplementary-materials.zip` содержит исходный текст
-статьи, программную реализацию трёх методов, автоматические тесты,
-воспроизводимые результаты эксперимента и исходные теоретические
-материалы.
+`output/article-supplementary-materials.zip` собирается скриптом
+`build_supplementary.py` после полного численного запуска и сборки PDF.
+Архив сохраняет **корневую структуру репозитория**. Старый архив с отдельными
+`source/`, `article/`, `build/` заменён: он не включал трёхмерное продолжение.
 
-## Состав
+В комплект входят вычислительные модули 2D/3D, `mesh_geometry_3d.py`, интерфейс,
+все `test_*.py`, фиксированный геометрический контрпример, `article.tex`,
+`output/pdf/article.pdf`, CSV/TeX/JSON/рисунки, координаты 12 трёхмерных сеток,
+журнал тестов, проверка градиентов, сведения о среде и сценарии воспроизведения.
+Архив содержит `MANIFEST_SHA256.json`. Исходные `main.tex` и `tishkin_grid.tex`
+сохранены без изменений и не являются актуальной статьёй.
 
-- `article/` — `article.tex` и собранный `article.pdf`;
-- `source/` — вычислительное ядро (2D и 3D), модель интерфейса и
-  Tk-приложение;
-- `tests/` — 43 автоматических теста (15 двумерных, 15 трёхмерных и
-  13 для модели интерфейса);
-- `generated/` — CSV, JSON, таблица и рисунки основной серии (2D и 3D),
-  а также отдельный контрольный расчёт при `mu=0`;
-- `original-theory/` — неизменённый исходный текст исследования
-  `main.tex` и рукопись В. Ф. Тишкина `tishkin_grid.tex`;
-- `build/` — зависимости и сценарий сборки Windows-приложения.
+## Полное воспроизведение
 
-## Воспроизведение
+Выполнять из корня распакованного архива. Требуется Python 3.11+; для PDF
+нужен TeX Live/MiKTeX с кириллицей T2A и пакетами из преамбулы статьи.
+Для численного ядра установить версии из `requirements.txt`.
 
 ```powershell
+$env:OPENBLAS_NUM_THREADS = "1"
+$env:OMP_NUM_THREADS = "1"
+$env:MPLBACKEND = "Agg"
 python -m pip install -r requirements.txt
-python -m unittest -v test_mesh_methods.py test_mesh_methods_3d.py test_mesh_gui.py
-python mesh_methods.py --output-dir output/generated
-python mesh_methods.py --adaptive-mu0-control --output-dir output/generated
-python mesh_methods_3d.py --output-dir output/generated
-pdflatex -interaction=nonstopmode -halt-on-error -output-directory=output/pdf article.tex
-pdflatex -interaction=nonstopmode -halt-on-error -output-directory=output/pdf article.tex
+python audit_reproduce.py --full
+xelatex -interaction=nonstopmode -halt-on-error -output-directory=output/pdf article.tex
+xelatex -interaction=nonstopmode -halt-on-error -output-directory=output/pdf article.tex
+python build_supplementary.py
+python verify_artifacts.py
 ```
 
-Для сборки приложения:
+На Linux переменные окружения задаются через `export`. Числа времени и
+истории оптимизации зависят от среды; это не требование побитового совпадения
+повторных запусков. Каждый пакет должен быть **внутренне согласован**:
+его CSV, таблицы, обсуждение, сохранённые координаты и PDF относятся к одному
+запуску. Версии и хеши исходников записываются в `output/audit/verification.json`.
 
-```powershell
-python -m pip install -r requirements-build.txt
-powershell -ExecutionPolicy Bypass -File build_exe.ps1
-```
+## Проверки без полного расчёта
+
+`python -m unittest discover -v` запускает все регрессионные тесты.
+`python verify_artifacts.py` сверяет таблицы с CSV, пересчитывает метрики
+сохранённых 3D-сеток, проверяет хеши протестированных исходников и состав ZIP.
+Вторую команду следует запускать до локального редактирования исходников;
+после изменений требуется повторный аудит и упаковка.
+
+Геометрическая диагностика по 27 отсчётам не доказывает положительность
+якобиана между отсчётами. Численный аудит не заменяет проверку Windows EXE.
+Релиз 1.2.1 и старые скриншоты не представляют исправленную сборку программы.

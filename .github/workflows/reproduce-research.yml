@@ -1,0 +1,48 @@
+name: Reproduce research artifacts
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      MPLBACKEND: Agg
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install numerical and manuscript dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends texlive-xetex texlive-lang-cyrillic texlive-latex-extra texlive-fonts-recommended fonts-dejavu-core
+      - name: Reproduce experiments and tests
+        run: |
+          python audit_reproduce.py --full
+          python -m pip freeze > output/audit/ci_environment.txt
+      - name: Compile manuscript and verify package
+        run: |
+          xelatex -interaction=nonstopmode -halt-on-error -output-directory=output/pdf article.tex > /tmp/manuscript-pass1.log
+          xelatex -interaction=nonstopmode -halt-on-error -output-directory=output/pdf article.tex > /tmp/manuscript-pass2.log
+          if grep -E 'Undefined control sequence|LaTeX Error|Missing character:|There were undefined references' /tmp/manuscript-pass2.log; then exit 1; fi
+          python build_supplementary.py
+          python verify_artifacts.py
+      - name: Upload reproduced artifacts without changing the repository
+        uses: actions/upload-artifact@v4
+        with:
+          name: reproduced-research
+          path: |
+            output/article-supplementary-materials.zip
+            output/pdf/article.pdf
+            output/audit
+          retention-days: 14

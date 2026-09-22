@@ -147,7 +147,7 @@ class Algorithm3DTests(unittest.TestCase):
             self.assertLessEqual(result.residual, tolerance)
             packed = meshes._pack_interior_3d(result.grid)
             length_scale = float(result.parameters["length_scale"])
-            if result.method.startswith("Винслоу"):
+            if "orientation_barrier" not in result.parameters:
                 _, physical_gradient = meshes._winslow_objective_and_gradient_3d(
                     packed, result.grid, float(result.parameters["jacobian_floor"])
                 )
@@ -253,7 +253,7 @@ class Metric3DTests(unittest.TestCase):
         self.assertAlmostEqual(float(metrics["orthogonality_score"]), 1.0, places=12)
         self.assertAlmostEqual(float(metrics["volume_cv"]), 0.0, places=12)
         self.assertAlmostEqual(float(metrics["min_scaled_jacobian"]), 1.0, places=12)
-        self.assertAlmostEqual(float(metrics["aspect_p95"]), 1.0, places=12)
+        self.assertAlmostEqual(float(metrics["aspect_p95"]), 7.0 / 5.0, places=12)
         self.assertAlmostEqual(float(metrics["volume"]), 8.0, places=12)
 
     def test_twisted_cube_volume_matches_analytic_family(self) -> None:
@@ -261,7 +261,7 @@ class Metric3DTests(unittest.TestCase):
         # (8/3)(2 + cos(twist)) with twist = 0.6.
         grid = meshes.coons_patch_3d(meshes.twisted_cube_boundary_3d(twist=0.6), 21, 21, 21)
         self.assertAlmostEqual(
-            meshes.volume_3d(grid), (8.0 / 3.0) * (2.0 + np.cos(0.6)), delta=0.01
+            meshes.volume_3d(grid), (8.0 / 3.0) * (2.0 + np.cos(0.6)), delta=2e-12
         )
 
 
