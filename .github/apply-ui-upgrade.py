@@ -23,6 +23,9 @@ payload = json.loads(raw)
 assert set(payload) == ALLOWED, 'Unexpected source paths'
 outputs = {}
 for filename, item in payload.items():
+    if filename.startswith('.github/workflows/'):
+        print('Deferred to authorized workflow writer:', filename)
+        continue
     path = ROOT / filename
     original = path.read_bytes() if path.exists() else None
     actual = hashlib.sha256(original).hexdigest() if original is not None else None
